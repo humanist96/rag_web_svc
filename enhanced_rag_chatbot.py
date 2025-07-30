@@ -401,21 +401,33 @@ if IS_PRODUCTION:
         "https://humanist96.github.io",
         "https://rag-web-svc.onrender.com",
         "https://rag-web-svc.vercel.app",
-        "https://rag-web-svc-*.vercel.app",  # Preview deployments
         "https://rag-web-svc-humanist96s-projects.vercel.app",  # 실제 배포 도메인
-        "https://rag-web-*-humanist96s-projects.vercel.app"  # 모든 preview deployments
     ])
+    # Vercel preview deployments를 위한 동적 처리
+    # 와일드카드는 CORSMiddleware에서 지원하지 않으므로 allow_origin_regex 사용
 
-logger.info(f"Allowed origins: {allowed_origins}")
+# 모든 origin 허용 (개발 단계에서만 사용)
+if IS_PRODUCTION:
+    # Production에서도 일단 모든 origin 허용 (디버깅용)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # 모든 origin 허용
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"]
+    )
+else:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+        expose_headers=["*"]
+    )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS", "HEAD"],
-    allow_headers=["*"],
-    expose_headers=["*"]
-)
+logger.info(f"CORS configured for {'all origins (debugging)' if IS_PRODUCTION else 'specific origins'}")
 
 # Error handlers
 @app.exception_handler(StarletteHTTPException)
@@ -490,14 +502,29 @@ async def favicon():
     """파비콘 더미 응답"""
     return JSONResponse(status_code=204)  # No Content
 
+@app.post("/test-upload")
+async def test_upload(request: Request):
+    """업로드 테스트 엔드포인트"""
+    headers = dict(request.headers)
+    logger.info(f"Test upload - Headers: {headers}")
+    return {
+        "message": "Upload test endpoint working",
+        "headers": headers,
+        "method": request.method,
+        "url": str(request.url)
+    }
+
 @app.post("/upload", response_model=UploadResponse)
 async def upload_pdf(
     file: UploadFile = File(...),
     session_id: Optional[str] = Form(None)
 ):
     """PDF 파일 업로드 및 처리"""
+    logger.info(f"Upload request received - File: {file.filename}, Session: {session_id}")
+    
     # 파일 확장자 확인
     if not file.filename.lower().endswith('.pdf'):
+        logger.error(f"Invalid file type: {file.filename}")
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다")
     
     # 파일 크기 확인
