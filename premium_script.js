@@ -172,10 +172,11 @@ function setupUploadHandlers() {
     // File input change
     pdfInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
-        if (file && (file.type === 'application/pdf' || file.type === 'text/csv' || file.name.endsWith('.csv'))) {
-            handleFileUpload(file);
-        } else if (file) {
-            showToast('Please select a PDF or CSV file', 'error');
+        if (file) {
+            const isValidFile = validateFile(file);
+            if (isValidFile) {
+                handleFileUpload(file);
+            }
         }
     });
     
@@ -196,13 +197,58 @@ function setupUploadHandlers() {
         const files = e.dataTransfer.files;
         if (files.length > 0) {
             const file = files[0];
-            if (file.type === 'application/pdf' || file.type === 'text/csv' || file.name.endsWith('.csv')) {
+            const isValidFile = validateFile(file);
+            if (isValidFile) {
                 handleFileUpload(file);
-            } else {
-                showToast('Please drop a PDF or CSV file', 'error');
             }
         }
     });
+}
+
+// File validation
+function validateFile(file) {
+    // Check if file exists
+    if (!file) {
+        showToast('파일이 선택되지 않았습니다.', 'error');
+        return false;
+    }
+    
+    // Check file extension
+    const fileName = file.name.toLowerCase();
+    const fileExtension = fileName.substring(fileName.lastIndexOf('.'));
+    const allowedExtensions = ['.pdf', '.csv'];
+    
+    if (!allowedExtensions.includes(fileExtension)) {
+        showToast(`지원하지 않는 파일 형식입니다. PDF 또는 CSV 파일만 업로드 가능합니다. (현재: ${fileExtension})`, 'error');
+        return false;
+    }
+    
+    // Check file size (50MB limit)
+    const maxSize = 50 * 1024 * 1024; // 50MB
+    if (file.size > maxSize) {
+        const fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
+        showToast(`파일 크기가 너무 큽니다. 최대 50MB까지 업로드 가능합니다. (현재: ${fileSizeMB}MB)`, 'error');
+        return false;
+    }
+    
+    // Check if file is empty
+    if (file.size === 0) {
+        showToast('파일이 비어있습니다. 내용이 있는 파일을 업로드해주세요.', 'error');
+        return false;
+    }
+    
+    // Validate MIME type
+    const validMimeTypes = {
+        '.pdf': ['application/pdf', 'application/x-pdf'],
+        '.csv': ['text/csv', 'application/csv', 'text/plain', 'application/vnd.ms-excel']
+    };
+    
+    const expectedMimeTypes = validMimeTypes[fileExtension];
+    if (expectedMimeTypes && file.type && !expectedMimeTypes.includes(file.type)) {
+        console.warn(`MIME type mismatch: expected ${expectedMimeTypes.join(' or ')}, got ${file.type}`);
+    }
+    
+    return true;
 }
 
 // File Upload Handler
@@ -317,23 +363,27 @@ async function handleFileUpload(file) {
         uploadContent.style.display = 'block';
         
         // Parse error response
-        let errorMessage = '파일 업로드 실패: ';
+        let errorMessage = '';
         
-        if (error.response) {
-            // Server responded with error
-            try {
-                const errorData = await error.response.json();
-                errorMessage = errorData.detail || errorData.message || '서버 오류가 발생했습니다.';
-            } catch (e) {
-                errorMessage = `서버 오류 (${error.response.status})`;
-            }
+        // Check if it's our thrown error with message
+        if (error.message) {
+            errorMessage = error.message;
         } else if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-            errorMessage = '네트워크 연결을 확인해주세요.';
+            errorMessage = '서버에 연결할 수 없습니다. 네트워크 연결을 확인해주세요.';
         } else {
-            errorMessage = error.message || '알 수 없는 오류가 발생했습니다.';
+            errorMessage = '알 수 없는 오류가 발생했습니다. 다시 시도해주세요.';
         }
         
+        // Show detailed error message with retry suggestion
         showToast(errorMessage, 'error');
+        
+        // Log detailed error for debugging
+        console.error('Upload failed:', {
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            error: error
+        });
     }
 }
 
@@ -696,11 +746,12 @@ function showToast(message, type = 'info') {
     
     toastContainer.appendChild(toast);
     
-    // Auto remove after 3 seconds
+    // Auto remove after duration (longer for errors)
+    const duration = type === 'error' ? 6000 : 3000;
     setTimeout(() => {
         toast.style.animation = 'toastSlide 0.3s ease reverse';
         setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    }, duration);
 }
 
 // Quick Actions

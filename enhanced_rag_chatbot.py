@@ -1,5 +1,5 @@
 """
-향상된 RAG 기반 챗봇 백엔드 서버 - PDF 업로드 기능 포함
+향상된 RAG 기반 챗봇 백엔드 서버 - 문서 업로드 기능 포함
 """
 import os
 import logging
@@ -78,7 +78,7 @@ class ChatResponse(BaseModel):
     answer: str = Field(..., description="챗봇 응답")
     sources: List[Dict] = Field(default=[], description="참조된 소스")
     session_id: str = Field(..., description="세션 ID")
-    pdf_name: Optional[str] = Field(None, description="현재 로드된 PDF 이름")
+    pdf_name: Optional[str] = Field(None, description="현재 로드된 파일 이름")
 
 class UploadResponse(BaseModel):
     session_id: str = Field(..., description="세션 ID")
@@ -243,7 +243,7 @@ class SessionManager:
             session["qa_chain"] = qa_chain
             session["pdf_name"] = filename
             
-            # 메모리 초기화 (새 PDF 업로드 시)
+            # 메모리 초기화 (새 파일 업로드 시)
             session["memory"].clear()
             session["messages_count"] = 0
             
@@ -587,7 +587,7 @@ class SessionManager:
             raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
         
         if not session["qa_chain"]:
-            raise HTTPException(status_code=400, detail="먼저 PDF 파일을 업로드해주세요")
+            raise HTTPException(status_code=400, detail="먼저 파일(PDF 또는 CSV)을 업로드해주세요")
         
         try:
             # 응답 시간 측정 시작
@@ -703,7 +703,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Enhanced RAG Chatbot API",
-    description="PDF 업로드 기능이 포함된 RAG 챗봇",
+    description="문서(PDF/CSV) 업로드 기능이 포함된 RAG 챗봇",
     version="2.0.0",
     lifespan=lifespan
 )
@@ -832,28 +832,56 @@ async def test_upload(request: Request):
     }
 
 @app.post("/upload", response_model=UploadResponse)
-async def upload_pdf(
+async def upload_file(
     file: UploadFile = File(...),
     session_id: Optional[str] = Form(None)
 ):
-    """PDF 파일 업로드 및 처리"""
+    """파일(PDF/CSV) 업로드 및 처리"""
     logger.info(f"Upload request received - File: {file.filename}, Session: {session_id}")
     
+    # 파일이 없는 경우
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="파일이 선택되지 않았습니다. PDF 또는 CSV 파일을 선택해주세요.")
+    
     # 파일 확장자 확인
-    if not file.filename.lower().endswith('.pdf'):
+    file_extension = os.path.splitext(file.filename)[1].lower()
+    if not file_extension:
+        raise HTTPException(status_code=400, detail="파일 확장자가 없습니다. .pdf 또는 .csv 파일을 업로드해주세요.")
+    
+    if file_extension not in ALLOWED_EXTENSIONS:
         logger.error(f"Invalid file type: {file.filename}")
-        raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다")
+        allowed_list = ", ".join(sorted(ALLOWED_EXTENSIONS))
+        raise HTTPException(
+            status_code=400, 
+            detail=f"지원하지 않는 파일 형식입니다. 지원 형식: {allowed_list} (업로드된 파일: {file_extension})"
+        )
+    
+    # Content-Type 검증 (추가 보안)
+    content_type = file.content_type
+    if file_extension == ".pdf" and content_type not in ["application/pdf", "application/x-pdf"]:
+        logger.warning(f"Content-Type mismatch for PDF: {content_type}")
+    elif file_extension == ".csv" and content_type not in ["text/csv", "application/csv", "text/plain", "application/vnd.ms-excel"]:
+        logger.warning(f"Content-Type mismatch for CSV: {content_type}")
     
     # 파일 크기 확인
     file_content = await file.read()
     file_size = len(file_content)
+    
+    if file_size == 0:
+        raise HTTPException(status_code=400, detail="파일이 비어있습니다. 내용이 있는 파일을 업로드해주세요.")
+    
     if file_size > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail=f"File size exceeds {MAX_FILE_SIZE // 1024 // 1024}MB limit")
+        size_mb = MAX_FILE_SIZE // 1024 // 1024
+        file_size_mb = file_size // 1024 // 1024
+        raise HTTPException(
+            status_code=413, 
+            detail=f"파일 크기가 너무 큽니다. 최대 {size_mb}MB까지 업로드 가능합니다. (현재 파일: 약 {file_size_mb}MB)"
+        )
     
     # 파일명 보안 검증
     safe_filename = re.sub(r'[^\w\s.-]', '', file.filename)
     if not safe_filename:
-        safe_filename = f"document_{uuid.uuid4().hex[:8]}.pdf"
+        safe_filename = f"document_{uuid.uuid4().hex[:8]}{file_extension}"
     
     await file.seek(0)  # Reset file pointer
     

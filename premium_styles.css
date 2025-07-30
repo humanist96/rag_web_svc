@@ -1217,6 +1217,8 @@ body {
     align-items: center;
     gap: var(--spacing-sm);
     min-width: 300px;
+    max-width: 500px;
+    word-wrap: break-word;
     animation: toastSlide 0.3s ease;
 }
 
