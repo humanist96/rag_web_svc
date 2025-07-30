@@ -1,0 +1,94 @@
+# Python files
+*.py
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.gitignore
+.mypy_cache
+.pytest_cache
+.hypothesis
+
+# Development files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.log
+logs
+*.sql
+*.sqlite
+
+# Documentation
+*.md
+docs/
+README.md
+
+# Test files
+test_*
+*_test.*
+tests/
+
+# Build files
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Deployment scripts
+deploy_*.py
+push_*.bat
+start_*.bat
+cleanup_*.py
+
+# Backend specific
+requirements*.txt
+runtime.txt
+Dockerfile
+build.sh
+start.sh
+
+# Uploads folder
+uploads/
+
+# FAISS index (backend only)
+faiss_index/
+
+# Keep only frontend files
+!index.html
+!premium_index.html
+!premium_script.js
+!premium_styles.css
+!config.js
+!*.css
+!*.js
+!*.html
+!*.json
+!_headers
+!_redirects
