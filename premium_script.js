@@ -243,14 +243,28 @@ async function handleFileUpload(file) {
     try {
         progressStatus.textContent = 'Processing PDF...';
         
+        console.log(`Uploading to: ${API_URL}/upload`);
+        console.log('File:', file.name, 'Size:', file.size);
+        
         const response = await fetch(`${API_URL}/upload`, {
             method: 'POST',
             body: formData
         });
         
+        console.log('Response status:', response.status);
+        console.log('Response headers:', response.headers);
+        
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || 'Upload failed');
+            const errorText = await response.text();
+            console.error('Upload error response:', errorText);
+            let errorMessage = 'Upload failed';
+            try {
+                const errorData = JSON.parse(errorText);
+                errorMessage = errorData.detail || errorMessage;
+            } catch (e) {
+                errorMessage = `Upload failed: ${response.status} ${response.statusText}`;
+            }
+            throw new Error(errorMessage);
         }
         
         const result = await response.json();

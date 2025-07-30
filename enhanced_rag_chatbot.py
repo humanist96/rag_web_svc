@@ -401,7 +401,9 @@ if IS_PRODUCTION:
         "https://humanist96.github.io",
         "https://rag-web-svc.onrender.com",
         "https://rag-web-svc.vercel.app",
-        "https://rag-web-svc-*.vercel.app"  # Preview deployments
+        "https://rag-web-svc-*.vercel.app",  # Preview deployments
+        "https://rag-web-svc-humanist96s-projects.vercel.app",  # 실제 배포 도메인
+        "https://rag-web-*-humanist96s-projects.vercel.app"  # 모든 preview deployments
     ])
 
 logger.info(f"Allowed origins: {allowed_origins}")
