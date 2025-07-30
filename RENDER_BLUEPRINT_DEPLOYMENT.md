@@ -27,7 +27,9 @@
    - Environment 탭에서 **OPENAI_API_KEY** 추가
    - 값: 실제 OpenAI API 키 입력
 
-### 2. render.yaml 구조
+### 2. render.yaml 구조 (업데이트됨)
+
+**참고**: Render가 `type: static`을 지원하지 않아 `type: web`으로 변경했습니다.
 
 ```yaml
 services:
@@ -44,15 +46,12 @@ services:
       - key: ALLOWED_ORIGINS
         value: "https://humanist96.github.io,https://rag-web-svc-frontend.onrender.com"
   
-  # Frontend Static Site
-  - type: static
+  # Frontend Web Service
+  - type: web
     name: rag-web-svc-frontend
+    env: python
     plan: free
-    staticPublishPath: ./
-    routes:
-      - type: rewrite
-        source: /
-        destination: /premium_index.html
+    startCommand: "python frontend_server.py"
 ```
 
 ### 3. 배포 상태 확인

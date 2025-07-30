@@ -17,18 +17,14 @@ services:
       - key: RENDER
         value: "true"
   
-  # Frontend Static Site
-  - type: static
+  # Frontend Web Service
+  - type: web
     name: rag-web-svc-frontend
+    env: python
     plan: free
     branch: master
     buildCommand: "echo 'No build required for static files'"
-    staticPublishPath: ./
-    headers:
-      - path: /*
-        name: Cache-Control
-        value: public, max-age=3600
-    routes:
-      - type: rewrite
-        source: /
-        destination: /premium_index.html
+    startCommand: "python frontend_server.py"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
