@@ -310,21 +310,29 @@ async function handleFileUpload(file) {
         
     } catch (error) {
         console.error('Upload error:', error);
-        console.error('Error type:', error.constructor.name);
-        console.error('Error stack:', error.stack);
         clearInterval(progressInterval);
         
         // Reset upload
         uploadProgress.style.display = 'none';
         uploadContent.style.display = 'block';
         
-        // 더 자세한 에러 메시지
-        let errorMessage = 'Upload failed. ';
-        if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-            errorMessage += 'Network error - please check your connection.';
+        // Parse error response
+        let errorMessage = '파일 업로드 실패: ';
+        
+        if (error.response) {
+            // Server responded with error
+            try {
+                const errorData = await error.response.json();
+                errorMessage = errorData.detail || errorData.message || '서버 오류가 발생했습니다.';
+            } catch (e) {
+                errorMessage = `서버 오류 (${error.response.status})`;
+            }
+        } else if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+            errorMessage = '네트워크 연결을 확인해주세요.';
         } else {
-            errorMessage += error.message || 'Please try again.';
+            errorMessage = error.message || '알 수 없는 오류가 발생했습니다.';
         }
+        
         showToast(errorMessage, 'error');
     }
 }

@@ -261,8 +261,39 @@ class SessionManager:
     async def process_csv(self, session_id: str, file_path: str, filename: str) -> Dict:
         """CSV 파일 처리 및 벡터스토어 생성"""
         try:
-            # CSV 데이터 읽기
-            df = pd.read_csv(file_path, encoding='utf-8-sig', sep=None, engine='python')
+            # CSV 데이터 읽기 - 다양한 인코딩 시도
+            df = None
+            encodings = ['utf-8-sig', 'utf-8', 'cp949', 'euc-kr', 'latin1']
+            last_error = None
+            
+            for encoding in encodings:
+                try:
+                    df = pd.read_csv(file_path, encoding=encoding, sep=None, engine='python')
+                    logger.info(f"CSV 로드 성공 - 인코딩: {encoding}")
+                    break
+                except Exception as e:
+                    last_error = e
+                    continue
+            
+            if df is None:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"CSV 파일을 읽을 수 없습니다. 파일 형식이나 인코딩을 확인해주세요. (시도한 인코딩: {', '.join(encodings)})"
+                )
+            
+            # 데이터 검증
+            if df.empty:
+                raise HTTPException(
+                    status_code=400,
+                    detail="CSV 파일이 비어있습니다. 데이터가 포함된 파일을 업로드해주세요."
+                )
+            
+            if len(df.columns) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="CSV 파일에 컬럼이 없습니다. 올바른 형식의 CSV 파일을 업로드해주세요."
+                )
+            
             logger.info(f"CSV 로드 완료: {filename}, 행: {len(df)}, 열: {df.shape[1]}")
             
             # 데이터 요약 정보 생성
@@ -327,12 +358,16 @@ class SessionManager:
 결측값 개수: {df[col].isna().sum()}
 """
                 if df[col].dtype in ['int64', 'float64']:
-                    col_info += f"""
+                    try:
+                        col_info += f"""
 평균: {df[col].mean():.2f}
 중앙값: {df[col].median():.2f}
 최솟값: {df[col].min()}
 최댓값: {df[col].max()}
 """
+                    except:
+                        # 숫자 처리 실패 시 기본 정보만 표시
+                        col_info += "\n숫자 통계를 계산할 수 없습니다.\n"
                 else:
                     # 문자열 컬럼의 경우 상위 빈도값 표시
                     top_values = df[col].value_counts().head(10)
@@ -461,9 +496,29 @@ class SessionManager:
                 "chunks": len(chunks)
             }
             
+        except pd.errors.EmptyDataError:
+            raise HTTPException(
+                status_code=400,
+                detail="CSV 파일이 비어있거나 형식이 올바르지 않습니다."
+            )
+        except pd.errors.ParserError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"CSV 파일 구문 분석 오류: 파일 형식을 확인해주세요. (구분자가 쉼표인지 확인)"
+            )
+        except MemoryError:
+            raise HTTPException(
+                status_code=413,
+                detail="CSV 파일이 너무 큽니다. 더 작은 파일을 업로드해주세요."
+            )
+        except HTTPException:
+            raise  # HTTPException은 그대로 전달
         except Exception as e:
-            logger.error(f"CSV 처리 중 오류: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"CSV 처리 실패: {str(e)}")
+            logger.error(f"CSV 처리 중 예상치 못한 오류: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"CSV 처리 중 오류가 발생했습니다. 파일 형식을 확인하고 다시 시도해주세요."
+            )
     
     async def process_file(self, session_id: str, file_path: str, filename: str) -> Dict:
         """파일 타입에 따라 적절한 처리 메서드 호출"""
@@ -832,12 +887,29 @@ async def upload_pdf(
             status="success"
         )
         
+    except HTTPException as e:
+        # HTTPException은 그대로 전달 (이미 사용자 친화적인 메시지)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise
     except Exception as e:
         logger.error(f"업로드 처리 중 오류: {str(e)}", exc_info=True)
         # 오류 시 파일 삭제
         if os.path.exists(file_path):
             os.remove(file_path)
-        raise HTTPException(status_code=500, detail=str(e))
+        
+        # 사용자 친화적인 에러 메시지
+        error_message = "파일 처리 중 오류가 발생했습니다. "
+        if "memory" in str(e).lower():
+            error_message = "파일이 너무 큽니다. 더 작은 파일을 업로드해주세요."
+        elif "encoding" in str(e).lower() or "decode" in str(e).lower():
+            error_message = "파일 인코딩 문제가 발생했습니다. UTF-8 또는 한글 인코딩 파일을 사용해주세요."
+        elif "format" in str(e).lower():
+            error_message = "파일 형식이 올바르지 않습니다. PDF 또는 CSV 파일을 업로드해주세요."
+        else:
+            error_message += "파일을 확인하고 다시 시도해주세요."
+            
+        raise HTTPException(status_code=500, detail=error_message)
     
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
