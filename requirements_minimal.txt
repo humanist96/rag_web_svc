@@ -1,0 +1,13 @@
+# Minimal working requirements
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+openai
+langchain
+langchain-community
+langchain-openai
+faiss-cpu
+pypdf
+tiktoken
+aiofiles

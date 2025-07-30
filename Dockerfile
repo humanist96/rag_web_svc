@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # 요구사항 파일 복사 및 설치
-COPY requirements.txt .
+COPY requirements_minimal.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements_minimal.txt
 
 # 애플리케이션 코드 복사
 COPY . .

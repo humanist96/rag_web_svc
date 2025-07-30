@@ -1,22 +1,24 @@
-# Core dependencies for deployment
-fastapi==0.116.1
-uvicorn[standard]==0.35.0
-python-multipart==0.0.20
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0.post1
+python-multipart==0.0.6
 python-dotenv==1.0.0
 
-# LangChain and AI
-langchain==0.3.7
-langchain-community==0.3.5
-langchain-openai==0.2.8
-openai==1.54.3
+# OpenAI and LangChain
+openai==1.6.1
+langchain==0.1.0
+langchain-community==0.0.10
+langchain-openai==0.0.5
 
 # Vector Store
-faiss-cpu==1.9.0.post1
+faiss-cpu==1.7.4
 
 # Document Processing
-pypdf==5.1.0
-tiktoken==0.8.0
+pypdf==3.17.0
+tiktoken==0.5.2
 
-# Utilities
-pydantic==2.5.2
-aiofiles==24.1.0
+# Other dependencies
+aiofiles==23.2.1
+pydantic>=1.10,<3
+typing-extensions>=4.0.0
+numpy<2.0.0
