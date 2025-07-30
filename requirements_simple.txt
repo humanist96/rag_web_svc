@@ -1,0 +1,11 @@
+# Simplified dependencies
+langchain
+pypdf
+openai
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+numpy
+faiss-cpu
+transformers

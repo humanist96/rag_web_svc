@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+uploads/
+faiss_index/
+*.pdf
+!docs/*.pdf
+chroma_db/
+*.log
+*.db
+
+# Secrets
+*.pem
+*.key
+api_keys.json
+secrets.yaml
+
+# Test files
+test_*.html
+!test_premium.html
+
+# Temporary files
+*.tmp
+*.temp
+nul
+
+# Build
+dist/
+build/
+*.egg-info/

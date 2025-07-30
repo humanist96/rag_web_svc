@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Server Status - AI Nexus</title>
+    <style>
+        body {
+            background: #0a0a0a;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            padding: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .status-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+        h1 {
+            background: linear-gradient(135deg, #10b981 0%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 3rem;
+            margin-bottom: 20px;
+        }
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            padding: 12px 24px;
+            border-radius: 50px;
+            margin: 20px 0;
+        }
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            background: #10b981;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+        .endpoints {
+            text-align: left;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .endpoint {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .endpoint:last-child {
+            border-bottom: none;
+        }
+        .endpoint-path {
+            font-family: monospace;
+            color: #60a5fa;
+        }
+        .endpoint-status {
+            color: #10b981;
+            font-size: 0.875rem;
+        }
+        .action-button {
+            background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            color: white;
+            border: none;
+            padding: 16px 32px;
+            border-radius: 50px;
+            font-size: 1.125rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 20px;
+        }
+        .action-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(99, 102, 241, 0.3);
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        .feature {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .feature-icon {
+            color: #10b981;
+        }
+    </style>
+</head>
+<body>
+    <div class="status-card">
+        <h1>서버 실행 중</h1>
+        
+        <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span>Server Running on Port 8001</span>
+        </div>
+        
+        <p style="color: #a3a3a3; margin: 20px 0;">
+            AI Nexus Premium Server with Real-Time Analytics
+        </p>
+        
+        <div class="endpoints">
+            <h3 style="color: #60a5fa; margin-bottom: 15px;">Available Endpoints</h3>
+            <div class="endpoint">
+                <span class="endpoint-path">GET /</span>
+                <span class="endpoint-status">✓ Active</span>
+            </div>
+            <div class="endpoint">
+                <span class="endpoint-path">POST /upload</span>
+                <span class="endpoint-status">✓ Active</span>
+            </div>
+            <div class="endpoint">
+                <span class="endpoint-path">POST /chat</span>
+                <span class="endpoint-status">✓ Active</span>
+            </div>
+            <div class="endpoint">
+                <span class="endpoint-path">GET /sessions</span>
+                <span class="endpoint-status">✓ Active</span>
+            </div>
+            <div class="endpoint">
+                <span class="endpoint-path">GET /analytics</span>
+                <span class="endpoint-status">✓ Active</span>
+            </div>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <span class="feature-icon">✅</span>
+                <span>실시간 분석 추적</span>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">✅</span>
+                <span>PDF 업로드 지원</span>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">✅</span>
+                <span>RAG 기반 채팅</span>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">✅</span>
+                <span>세션 관리</span>
+            </div>
+        </div>
+        
+        <button class="action-button" onclick="window.open('premium_index.html', '_blank')">
+            Open AI Nexus →
+        </button>
+        
+        <p style="color: #737373; margin-top: 30px; font-size: 0.875rem;">
+            서버 로그는 터미널 창에서 확인하세요
+        </p>
+    </div>
+</body>
+</html>
