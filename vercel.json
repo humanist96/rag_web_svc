@@ -1,6 +1,17 @@
 {
   "version": 2,
-  "buildCommand": false,
-  "outputDirectory": ".",
-  "framework": null
+  "builds": [
+    {
+      "src": "index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "premium_*.{html,js,css}",
+      "use": "@vercel/static"  
+    },
+    {
+      "src": "*.{js,css,png,jpg,jpeg,gif,svg,ico}",
+      "use": "@vercel/static"
+    }
+  ]
 }
