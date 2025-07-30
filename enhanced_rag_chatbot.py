@@ -12,9 +12,15 @@ import time
 import re
 from collections import Counter
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -33,7 +39,11 @@ load_dotenv()
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('app.log', encoding='utf-8')
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -48,6 +58,12 @@ analytics_data = {  # 분석 데이터 저장
     "daily_usage": {},
     "session_stats": {}
 }
+
+# Production settings
+IS_PRODUCTION = os.getenv("RENDER", "false").lower() == "true"
+MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+ALLOWED_EXTENSIONS = {".pdf"}
+MAX_SESSIONS = 100  # Limit sessions in production
 
 # Request/Response models
 class ChatRequest(BaseModel):
@@ -117,7 +133,49 @@ class SessionManager:
     
     def get_session(self, session_id: str) -> Optional[Dict]:
         """세션 정보 가져오기"""
-        return self.sessions.get(session_id)
+        session = self.sessions.get(session_id)
+        if session:
+            # 마지막 접근 시간 업데이트
+            session["last_accessed"] = datetime.now().isoformat()
+        return session
+    
+    def cleanup_session(self, session_id: str):
+        """세션 정리"""
+        if session_id in self.sessions:
+            # 업로드된 파일 삭제
+            try:
+                for file in os.listdir("uploads"):
+                    if file.startswith(f"{session_id}_"):
+                        os.remove(os.path.join("uploads", file))
+                        logger.info(f"파일 삭제: {file}")
+            except Exception as e:
+                logger.error(f"파일 삭제 실패: {e}")
+            
+            # Vector store 메모리 해제
+            if self.sessions[session_id].get("vectorstore"):
+                self.sessions[session_id]["vectorstore"] = None
+            
+            # 세션 데이터 삭제
+            del self.sessions[session_id]
+            logger.info(f"세션 삭제 완료: {session_id}")
+    
+    def cleanup_old_sessions(self, hours: int = 24):
+        """오래된 세션 자동 정리"""
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+        sessions_to_delete = []
+        
+        for session_id, session_data in self.sessions.items():
+            last_accessed = session_data.get("last_accessed", session_data.get("created_at"))
+            if last_accessed:
+                access_time = datetime.fromisoformat(last_accessed)
+                if access_time < cutoff_time:
+                    sessions_to_delete.append(session_id)
+        
+        for session_id in sessions_to_delete:
+            self.cleanup_session(session_id)
+        
+        if sessions_to_delete:
+            logger.info(f"Cleaned up {len(sessions_to_delete)} old sessions")
     
     async def process_pdf(self, session_id: str, file_path: str, filename: str) -> Dict:
         """PDF 파일 처리 및 벡터스토어 생성"""
@@ -334,20 +392,93 @@ app = FastAPI(
 )
 
 # CORS 설정
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+allowed_origins_str = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8000")
+allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
+
+# Production에서는 GitHub Pages URL 추가
+if IS_PRODUCTION:
+    allowed_origins.extend([
+        "https://humanist96.github.io",
+        "https://rag-web-svc-backend.onrender.com"
+    ])
+
+logger.info(f"Allowed origins: {allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if allowed_origins != ["*"] else ["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
+
+# Error handlers
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    logger.error(f"HTTP error: {exc.status_code} - {exc.detail}")
+    return await http_exception_handler(request, exc)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(f"Validation error: {exc}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "body": exc.body}
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled error: {str(exc)}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error" if IS_PRODUCTION else str(exc)}
+    )
+
+# Periodic cleanup task
+import asyncio
+from typing import Optional
+
+async def periodic_cleanup():
+    """주기적인 세션 정리"""
+    while True:
+        try:
+            await asyncio.sleep(3600)  # 1시간마다
+            if IS_PRODUCTION:
+                session_manager.cleanup_old_sessions(hours=12)  # 12시간 이상 된 세션 삭제
+                logger.info("Periodic cleanup completed")
+        except Exception as e:
+            logger.error(f"Periodic cleanup failed: {e}")
+
+# Background task
+background_tasks = set()
+
+@app.on_event("startup")
+async def startup_event():
+    """앱 시작 시 이벤트"""
+    logger.info(f"Starting AI Nexus backend (Production: {IS_PRODUCTION})")
+    if IS_PRODUCTION:
+        task = asyncio.create_task(periodic_cleanup())
+        background_tasks.add(task)
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """앱 종료 시 이벤트"""
+    logger.info("Shutting down AI Nexus backend")
+    for task in background_tasks:
+        task.cancel()
 
 # API 엔드포인트
 @app.get("/")
 async def root():
     """헬스 체크"""
-    return {"message": "Enhanced RAG Chatbot API is running", "status": "healthy"}
+    return {
+        "message": "Enhanced RAG Chatbot API is running",
+        "status": "healthy",
+        "environment": "production" if IS_PRODUCTION else "development",
+        "sessions_count": len(session_manager.sessions),
+        "version": "1.0.0"
+    }
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_pdf(
@@ -359,18 +490,30 @@ async def upload_pdf(
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다")
     
+    # 파일 크기 확인
+    file_content = await file.read()
+    file_size = len(file_content)
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail=f"File size exceeds {MAX_FILE_SIZE // 1024 // 1024}MB limit")
+    
+    # 파일명 보안 검증
+    safe_filename = re.sub(r'[^\w\s.-]', '', file.filename)
+    if not safe_filename:
+        safe_filename = f"document_{uuid.uuid4().hex[:8]}.pdf"
+    
+    await file.seek(0)  # Reset file pointer
+    
     # 세션 생성 또는 가져오기
     if not session_id or session_id not in session_manager.sessions:
         session_id = session_manager.create_session(session_id)
     
     # 파일 저장
     os.makedirs("uploads", exist_ok=True)
-    file_path = f"uploads/{session_id}_{file.filename}"
+    file_path = f"uploads/{session_id}_{safe_filename}"
     try:
         logger.info(f"파일 저장 중: {file_path}")
         with open(file_path, "wb") as buffer:
-            content = await file.read()
-            buffer.write(content)
+            buffer.write(file_content)
         logger.info(f"파일 저장 완료: {file_path}, 크기: {os.path.getsize(file_path)} bytes")
         
         # PDF 처리
