@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "name": "rag-web-svc",
+  "builds": [
+    {
+      "src": "premium_index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "*.js",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "*.css",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "headers": {
+        "Cache-Control": "s-maxage=86400",
+        "X-Frame-Options": "DENY",
+        "X-Content-Type-Options": "nosniff",
+        "X-XSS-Protection": "1; mode=block"
+      },
+      "dest": "/$1"
+    },
+    {
+      "src": "/",
+      "dest": "/premium_index.html"
+    }
+  ],
+  "outputDirectory": ".",
+  "public": true
+}

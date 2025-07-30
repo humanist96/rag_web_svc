@@ -400,7 +400,8 @@ if IS_PRODUCTION:
     allowed_origins.extend([
         "https://humanist96.github.io",
         "https://rag-web-svc.onrender.com",
-        "https://rag-web-svc-frontend.onrender.com"
+        "https://rag-web-svc.vercel.app",
+        "https://rag-web-svc-*.vercel.app"  # Preview deployments
     ])
 
 logger.info(f"Allowed origins: {allowed_origins}")
