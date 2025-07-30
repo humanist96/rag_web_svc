@@ -3,7 +3,11 @@
   "builds": [
     {
       "src": "api/*.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "maxLambdaSize": "10mb",
+        "runtime": "python3.9"
+      }
     },
     {
       "src": "premium_index.html",
@@ -34,11 +38,5 @@
   ],
   "env": {
     "OPENAI_API_KEY": "@openai-api-key"
-  },
-  "functions": {
-    "api/*.py": {
-      "maxDuration": 60,
-      "memory": 1024
-    }
   }
 }
