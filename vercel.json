@@ -1,39 +1,7 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/*.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "10mb",
-        "runtime": "python3.9"
-      }
-    },
-    {
-      "src": "premium_index.html",
-      "use": "@vercel/static"
-    },
-    {
-      "src": "*.js",
-      "use": "@vercel/static"
-    },
-    {
-      "src": "*.css",
-      "use": "@vercel/static"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
-      "src": "/(.*\\.(js|css|ico|png|jpg|jpeg|gif|svg))",
-      "dest": "/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/premium_index.html"
-    }
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)", "destination": "/premium_index.html" }
   ]
 }

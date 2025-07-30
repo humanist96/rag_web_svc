@@ -5,7 +5,16 @@
       "Bash(git remote add:*)",
       "Bash(git push:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(vercel ls:*)",
+      "Bash(vercel logs:*)",
+      "Bash(vercel inspect:*)",
+      "Bash(python:*)",
+      "Bash(taskkill:*)",
+      "Bash(powershell:*)",
+      "Bash(start chrome \"C:\\@Work\\vibe_coding\\finance_sales\\premium_index.html\")",
+      "Bash(cmd /c start chrome:*)",
+      "Bash(curl:*)"
     ],
     "deny": []
   }
