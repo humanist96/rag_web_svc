@@ -4,11 +4,11 @@ const config = {
         API_URL: 'http://localhost:8001'
     },
     production: {
-        API_URL: '' // Same origin on Vercel
+        API_URL: 'https://rag-web-svc.onrender.com' // Render.com 백엔드
     }
 };
 
-// Detect environment - Vercel sets NODE_ENV
+// Detect environment
 const isProduction = window.location.hostname !== 'localhost' && 
                     window.location.hostname !== '127.0.0.1';
 

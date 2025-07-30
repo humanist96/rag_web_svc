@@ -14,7 +14,9 @@
       "Bash(powershell:*)",
       "Bash(start chrome \"C:\\@Work\\vibe_coding\\finance_sales\\premium_index.html\")",
       "Bash(cmd /c start chrome:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(vercel:*)",
+      "Bash(Remove-Item -Path \"C:\\@Work\\vibe_coding\\finance_sales\\api\" -Recurse -Force)"
     ],
     "deny": []
   }
