@@ -5,7 +5,7 @@
 1. Go to https://github.com/new
 2. Login with your account (humanist96@gmail.com)
 3. Create a new repository with these settings:
-   - Repository name: `ai-nexus`
+   - Repository name: `rag_web_svc`
    - Description: "Premium PDF Analysis Platform with AI-powered chat and analytics"
    - Public repository
    - DO NOT initialize with README, .gitignore, or license (we already have them)
@@ -17,7 +17,7 @@ After creating the repository, run these commands in your terminal:
 
 ```bash
 # Add the remote repository (if not already added)
-git remote add origin https://github.com/humanist96/ai-nexus.git
+git remote add origin https://github.com/humanist96/rag_web_svc.git
 
 # Push the code
 git push -u origin master
@@ -29,21 +29,21 @@ If you get an authentication error, you may need to:
 
 ## Step 3: Enable GitHub Pages for Frontend
 
-1. Go to your repository settings: https://github.com/humanist96/ai-nexus/settings
+1. Go to your repository settings: https://github.com/humanist96/rag_web_svc/settings
 2. Scroll down to "Pages" section
 3. Under "Source", select "Deploy from a branch"
 4. Choose "master" branch and "/ (root)" folder
 5. Click "Save"
-6. Your frontend will be available at: https://humanist96.github.io/ai-nexus/premium_index.html
+6. Your frontend will be available at: https://humanist96.github.io/rag_web_svc/premium_index.html
 
 ## Step 4: Deploy Backend to Render.com
 
 1. Go to https://render.com and sign up/login
 2. Click "New +" → "Web Service"
 3. Connect your GitHub account if not already connected
-4. Select the "ai-nexus" repository
+4. Select the "rag_web_svc" repository
 5. Configure the service:
-   - Name: `ai-nexus-backend`
+   - Name: `rag-web-svc-backend`
    - Region: Oregon (US West)
    - Branch: master
    - Runtime: Python 3
@@ -59,11 +59,11 @@ If you get an authentication error, you may need to:
 
 After your backend is deployed on Render:
 
-1. Get your Render backend URL (will be something like `https://ai-nexus-backend.onrender.com`)
+1. Get your Render backend URL (will be something like `https://rag-web-svc-backend.onrender.com`)
 2. Update `config.js` in your repository:
    ```javascript
    production: {
-       API_URL: 'https://ai-nexus-backend.onrender.com'  // Your actual Render URL
+       API_URL: 'https://rag-web-svc-backend.onrender.com'  // Your actual Render URL
    }
    ```
 3. Commit and push the change:
@@ -75,8 +75,8 @@ After your backend is deployed on Render:
 
 ## Step 6: Test Your Deployment
 
-1. Frontend: Visit https://humanist96.github.io/ai-nexus/premium_index.html
-2. Backend API docs: Visit https://ai-nexus-backend.onrender.com/docs
+1. Frontend: Visit https://humanist96.github.io/rag_web_svc/premium_index.html
+2. Backend API docs: Visit https://rag-web-svc-backend.onrender.com/docs
 3. Test the full flow:
    - Upload a PDF
    - Ask questions in the chat

@@ -1,7 +1,7 @@
 # Render.com deployment configuration
 services:
   - type: web
-    name: ai-nexus-backend
+    name: rag-web-svc-backend
     runtime: python
     region: oregon
     plan: free

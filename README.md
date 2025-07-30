@@ -47,8 +47,8 @@ AI Nexus is a premium PDF analysis platform that transforms your documents into 
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/humanist96/ai-nexus.git
-   cd ai-nexus
+   git clone https://github.com/humanist96/rag_web_svc.git
+   cd rag_web_svc
    ```
 
 2. **Create a virtual environment**
