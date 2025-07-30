@@ -16,7 +16,8 @@
       "Bash(cmd /c start chrome:*)",
       "Bash(curl:*)",
       "Bash(vercel:*)",
-      "Bash(Remove-Item -Path \"C:\\@Work\\vibe_coding\\finance_sales\\api\" -Recurse -Force)"
+      "Bash(Remove-Item -Path \"C:\\@Work\\vibe_coding\\finance_sales\\api\" -Recurse -Force)",
+      "Bash(cp:*)"
     ],
     "deny": []
   }

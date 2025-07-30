@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Nexus - Premium PDF Analysis Platform</title>
+    
+    <!-- Modern Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <!-- Three.js for 3D Background -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <!-- Chart.js for Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="premium_styles.css">
+    
+    <!-- Configuration -->
+    <script src="config.js"></script>
+</head>
+<body>
+    <!-- 3D Background Canvas -->
+    <canvas id="three-canvas"></canvas>
+    
+    <!-- Noise Overlay -->
+    <div class="noise-overlay"></div>
+    
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Navigation Bar -->
+        <nav class="nav-bar glass">
+            <div class="nav-content">
+                <div class="logo">
+                    <i class="fas fa-brain"></i>
+                    <span>AI Nexus</span>
+                </div>
+                <div class="nav-links">
+                    <a href="#upload" class="nav-link active">
+                        <i class="fas fa-upload"></i>
+                        <span>Upload</span>
+                    </a>
+                    <a href="#chat" class="nav-link">
+                        <i class="fas fa-comments"></i>
+                        <span>Chat</span>
+                    </a>
+                    <a href="#sessions" class="nav-link">
+                        <i class="fas fa-folder-open"></i>
+                        <span>Sessions</span>
+                    </a>
+                    <a href="#analytics" class="nav-link">
+                        <i class="fas fa-chart-bar"></i>
+                        <span>Analytics</span>
+                    </a>
+                </div>
+                <div class="nav-actions">
+                    <button class="theme-toggle" aria-label="Toggle theme">
+                        <i class="fas fa-moon"></i>
+                    </button>
+                    <div class="status-indicator">
+                        <span class="status-dot"></span>
+                        <span class="status-text">Connected</span>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Hero Section -->
+        <section class="hero-section">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    <span class="gradient-text">AI-Powered</span>
+                    <br>
+                    Document Intelligence
+                </h1>
+                <p class="hero-subtitle">
+                    Transform your PDFs into interactive knowledge bases with advanced AI analysis
+                </p>
+                <div class="hero-stats">
+                    <div class="stat-card glass">
+                        <i class="fas fa-file-pdf"></i>
+                        <div class="stat-info">
+                            <span class="stat-value" id="total-pdfs">0</span>
+                            <span class="stat-label">PDFs Analyzed</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <i class="fas fa-brain"></i>
+                        <div class="stat-info">
+                            <span class="stat-value" id="total-queries">0</span>
+                            <span class="stat-label">AI Queries</span>
+                        </div>
+                    </div>
+                    <div class="stat-card glass">
+                        <i class="fas fa-clock"></i>
+                        <div class="stat-info">
+                            <span class="stat-value" id="response-time">0.8s</span>
+                            <span class="stat-label">Avg Response</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Upload Section -->
+        <section id="upload" class="content-section">
+            <div class="section-header">
+                <h2 class="section-title">Upload Document</h2>
+                <p class="section-subtitle">Drop your PDF or click to browse</p>
+            </div>
+            
+            <div class="upload-container">
+                <div class="upload-zone glass" id="upload-zone">
+                    <input type="file" id="pdf-input" accept=".pdf" hidden>
+                    <div class="upload-content" id="upload-content">
+                        <div class="upload-icon-container">
+                            <div class="upload-icon-ring"></div>
+                            <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                        </div>
+                        <h3 class="upload-title">Drop your PDF here</h3>
+                        <p class="upload-description">or click to browse from your computer</p>
+                        <div class="upload-features">
+                            <span class="upload-feature">
+                                <i class="fas fa-check-circle"></i>
+                                Max 50MB
+                            </span>
+                            <span class="upload-feature">
+                                <i class="fas fa-check-circle"></i>
+                                Secure Processing
+                            </span>
+                            <span class="upload-feature">
+                                <i class="fas fa-check-circle"></i>
+                                AI Analysis
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <div class="upload-progress" id="upload-progress" style="display: none;">
+                        <div class="progress-info">
+                            <i class="fas fa-file-pdf progress-icon"></i>
+                            <div class="progress-details">
+                                <h3 class="progress-filename" id="progress-filename">document.pdf</h3>
+                                <p class="progress-status" id="progress-status">Uploading...</p>
+                            </div>
+                            <span class="progress-percentage" id="progress-percentage">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-track">
+                                <div class="progress-fill" id="progress-fill"></div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="upload-success" id="upload-success" style="display: none;">
+                        <div class="success-animation">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <h3 class="success-title">Upload Complete!</h3>
+                        <p class="success-info" id="success-info"></p>
+                        <div class="success-actions">
+                            <button class="btn btn-primary" onclick="startChat()">
+                                <i class="fas fa-comments"></i>
+                                Start Chatting
+                            </button>
+                            <button class="btn btn-secondary" onclick="resetUpload()">
+                                <i class="fas fa-plus"></i>
+                                New Upload
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Chat Section -->
+        <section id="chat" class="content-section" style="display: none;">
+            <div class="section-header">
+                <h2 class="section-title">AI Assistant</h2>
+                <p class="section-subtitle">Ask anything about your document</p>
+            </div>
+            
+            <div class="chat-container glass">
+                <div class="chat-header">
+                    <div class="chat-info">
+                        <i class="fas fa-file-pdf"></i>
+                        <span class="chat-filename" id="chat-filename">No document loaded</span>
+                    </div>
+                    <div class="chat-actions">
+                        <button class="chat-action" onclick="clearChat()">
+                            <i class="fas fa-broom"></i>
+                        </button>
+                        <button class="chat-action" onclick="exportChat()">
+                            <i class="fas fa-download"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="chat-messages" id="chat-messages">
+                    <div class="chat-welcome">
+                        <i class="fas fa-robot chat-welcome-icon"></i>
+                        <h3>Welcome to AI Nexus</h3>
+                        <p>Upload a PDF document to start asking questions</p>
+                    </div>
+                </div>
+                
+                <div class="chat-input-container">
+                    <div class="chat-input-wrapper">
+                        <textarea 
+                            id="chat-input" 
+                            class="chat-input" 
+                            placeholder="Type your question..."
+                            rows="1"
+                            disabled
+                        ></textarea>
+                        <div class="chat-input-actions">
+                            <button class="input-action" onclick="toggleVoiceInput()">
+                                <i class="fas fa-microphone"></i>
+                            </button>
+                            <button class="input-action" onclick="attachFile()">
+                                <i class="fas fa-paperclip"></i>
+                            </button>
+                            <button class="btn btn-primary btn-send" id="send-button" onclick="sendMessage()" disabled>
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="input-hints">
+                        <span class="hint">Press Enter to send</span>
+                        <span class="hint">Shift+Enter for new line</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Sessions Section -->
+        <section id="sessions" class="content-section" style="display: none;">
+            <div class="section-header">
+                <h2 class="section-title">Session Management</h2>
+                <p class="section-subtitle">Access your previous conversations</p>
+            </div>
+            
+            <div class="sessions-container">
+                <div class="sessions-toolbar">
+                    <div class="search-box glass">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search sessions..." id="session-search">
+                    </div>
+                    <button class="btn btn-primary" onclick="refreshSessions()">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh
+                    </button>
+                </div>
+                
+                <div class="sessions-grid" id="sessions-grid">
+                    <!-- Sessions will be loaded here -->
+                </div>
+            </div>
+        </section>
+
+        <!-- Analytics Section -->
+        <section id="analytics" class="content-section" style="display: none;">
+            <div class="section-header">
+                <h2 class="section-title">Analytics Dashboard</h2>
+                <p class="section-subtitle">Track your usage and insights</p>
+            </div>
+            
+            <div class="analytics-grid">
+                <div class="analytics-card glass">
+                    <h3>Usage Overview</h3>
+                    <canvas id="usage-chart"></canvas>
+                </div>
+                <div class="analytics-card glass">
+                    <h3>Query Types</h3>
+                    <canvas id="query-chart"></canvas>
+                </div>
+                <div class="analytics-card glass">
+                    <h3>Response Times</h3>
+                    <canvas id="response-chart"></canvas>
+                </div>
+                <div class="analytics-card glass">
+                    <h3>Top Keywords</h3>
+                    <div id="keywords-cloud"></div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Floating Action Button -->
+    <button class="fab glass" onclick="toggleQuickActions()">
+        <i class="fas fa-plus"></i>
+    </button>
+    
+    <!-- Quick Actions Menu -->
+    <div class="quick-actions" id="quick-actions">
+        <button class="quick-action glass" onclick="quickUpload()">
+            <i class="fas fa-upload"></i>
+            <span>Quick Upload</span>
+        </button>
+        <button class="quick-action glass" onclick="newSession()">
+            <i class="fas fa-plus-circle"></i>
+            <span>New Session</span>
+        </button>
+        <button class="quick-action glass" onclick="showHelp()">
+            <i class="fas fa-question-circle"></i>
+            <span>Help</span>
+        </button>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Scripts -->
+    <script src="premium_script.js"></script>
+</body>
+</html>
