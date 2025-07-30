@@ -1,0 +1,5 @@
+# Redirect root to main app
+/    /premium_index.html    200
+
+# SPA fallback for any 404s
+/*    /premium_index.html    200

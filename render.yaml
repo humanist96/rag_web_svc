@@ -1,4 +1,5 @@
 services:
+  # Backend API Service
   - type: web
     name: rag-web-svc-backend
     env: python
@@ -12,6 +13,22 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: ALLOWED_ORIGINS
-        value: "https://humanist96.github.io"
+        value: "https://humanist96.github.io,https://rag-web-svc-frontend.onrender.com"
       - key: RENDER
         value: "true"
+  
+  # Frontend Static Site
+  - type: static
+    name: rag-web-svc-frontend
+    plan: free
+    branch: master
+    buildCommand: "echo 'No build required for static files'"
+    staticPublishPath: ./
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: public, max-age=3600
+    routes:
+      - type: rewrite
+        source: /
+        destination: /premium_index.html

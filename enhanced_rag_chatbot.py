@@ -399,7 +399,8 @@ allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
 if IS_PRODUCTION:
     allowed_origins.extend([
         "https://humanist96.github.io",
-        "https://rag-web-svc.onrender.com"
+        "https://rag-web-svc.onrender.com",
+        "https://rag-web-svc-frontend.onrender.com"
     ])
 
 logger.info(f"Allowed origins: {allowed_origins}")
