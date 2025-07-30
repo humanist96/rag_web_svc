@@ -399,7 +399,7 @@ allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
 if IS_PRODUCTION:
     allowed_origins.extend([
         "https://humanist96.github.io",
-        "https://rag-web-svc-backend.onrender.com"
+        "https://rag-web-svc.onrender.com"
     ])
 
 logger.info(f"Allowed origins: {allowed_origins}")
@@ -408,7 +408,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
     expose_headers=["*"]
 )
@@ -470,6 +470,7 @@ async def shutdown_event():
 
 # API 엔드포인트
 @app.get("/")
+@app.head("/")
 async def root():
     """헬스 체크"""
     return {
@@ -479,6 +480,11 @@ async def root():
         "sessions_count": len(session_manager.sessions),
         "version": "1.0.0"
     }
+
+@app.get("/favicon.ico")
+async def favicon():
+    """파비콘 더미 응답"""
+    return JSONResponse(status_code=204)  # No Content
 
 @app.post("/upload", response_model=UploadResponse)
 async def upload_pdf(

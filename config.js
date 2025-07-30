@@ -4,7 +4,7 @@ const config = {
         API_URL: 'http://localhost:8001'
     },
     production: {
-        API_URL: 'https://rag-web-svc-backend.onrender.com' // Will be updated after deployment
+        API_URL: 'https://rag-web-svc.onrender.com'
     }
 };
 
