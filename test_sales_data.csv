@@ -1,0 +1,21 @@
+Date,Product,Category,Salesperson,Region,Quantity,Unit Price,Total Sales,Customer Type
+2024-01-05,Laptop Pro X1,Electronics,김철수,서울,5,1500000,7500000,Enterprise
+2024-01-08,Office Suite 365,Software,박영희,서울,20,50000,1000000,SMB
+2024-01-10,Cloud Storage 1TB,Services,이민호,부산,15,30000,450000,Individual
+2024-01-12,Laptop Pro X1,Electronics,최지은,서울,3,1500000,4500000,Enterprise
+2024-01-15,Security Suite Pro,Software,김철수,대구,10,80000,800000,Enterprise
+2024-01-18,Monitor 27inch,Electronics,박영희,서울,8,400000,3200000,SMB
+2024-01-20,Cloud Storage 5TB,Services,정대현,인천,5,120000,600000,Enterprise
+2024-01-22,Office Suite 365,Software,이민호,부산,12,50000,600000,SMB
+2024-01-25,Laptop Pro X2,Electronics,최지은,서울,2,2000000,4000000,Enterprise
+2024-01-28,Security Suite Basic,Software,김철수,대구,25,30000,750000,Individual
+2024-02-02,Monitor 32inch,Electronics,박영희,서울,4,600000,2400000,Enterprise
+2024-02-05,Cloud Backup Pro,Services,정대현,인천,8,150000,1200000,Enterprise
+2024-02-08,Laptop Pro X1,Electronics,이민호,부산,6,1500000,9000000,SMB
+2024-02-10,Office Suite 365,Software,최지은,서울,30,50000,1500000,Individual
+2024-02-12,Security Suite Pro,Software,김철수,대구,5,80000,400000,SMB
+2024-02-15,Monitor 27inch,Electronics,박영희,서울,10,400000,4000000,Enterprise
+2024-02-18,Cloud Storage 1TB,Services,정대현,인천,20,30000,600000,Individual
+2024-02-20,Laptop Pro X2,Electronics,이민호,부산,1,2000000,2000000,Enterprise
+2024-02-22,Security Suite Basic,Software,최지은,서울,15,30000,450000,Individual
+2024-02-25,Office Suite Enterprise,Software,김철수,대구,1,500000,500000,Enterprise

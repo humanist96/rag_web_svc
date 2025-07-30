@@ -30,8 +30,12 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader, CSVLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.schema import Document
+import pandas as pd
+import csv
+import json
 
 # Load environment variables
 load_dotenv()
@@ -62,7 +66,7 @@ analytics_data = {  # 분석 데이터 저장
 # Production settings
 IS_PRODUCTION = os.getenv("RENDER", "false").lower() == "true"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
-ALLOWED_EXTENSIONS = {".pdf"}
+ALLOWED_EXTENSIONS = {".pdf", ".csv"}
 MAX_SESSIONS = 100  # Limit sessions in production
 
 # Request/Response models
@@ -79,7 +83,10 @@ class ChatResponse(BaseModel):
 class UploadResponse(BaseModel):
     session_id: str = Field(..., description="세션 ID")
     filename: str = Field(..., description="업로드된 파일명")
-    pages: int = Field(..., description="PDF 페이지 수")
+    file_type: str = Field(..., description="파일 타입")
+    pages: Optional[int] = Field(None, description="PDF 페이지 수")
+    rows: Optional[int] = Field(None, description="CSV 행 수")
+    columns: Optional[int] = Field(None, description="CSV 열 수")
     chunks: int = Field(..., description="생성된 청크 수")
     status: str = Field(..., description="처리 상태")
 
@@ -211,20 +218,8 @@ class SessionManager:
                 streaming=False
             )
             
-            prompt_template = f"""당신은 업로드된 PDF 문서 '{filename}'의 내용을 기반으로 답변하는 전문가입니다.
-            
-다음 컨텍스트를 사용하여 질문에 답변해주세요. 답변은 한국어로 작성하고, 가능한 구체적이고 정확하게 답변해주세요.
-컨텍스트가 질문과 관련이 없거나 답을 찾을 수 없다면, "업로드된 문서에서 해당 정보를 찾을 수 없습니다"라고 답변해주세요.
-
-컨텍스트:
-{{context}}
-
-대화 기록:
-{{chat_history}}
-
-질문: {{question}}
-
-답변:"""
+            # 향상된 PDF 프롬프트 템플릿
+            prompt_template = self.get_enhanced_prompt_template(filename, "pdf", {"pages": len(documents)})
             
             PROMPT = PromptTemplate(
                 template=prompt_template,
@@ -262,6 +257,273 @@ class SessionManager:
         except Exception as e:
             logger.error(f"PDF 처리 중 오류: {str(e)}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"PDF 처리 실패: {str(e)}")
+    
+    async def process_csv(self, session_id: str, file_path: str, filename: str) -> Dict:
+        """CSV 파일 처리 및 벡터스토어 생성"""
+        try:
+            # CSV 데이터 읽기
+            df = pd.read_csv(file_path, encoding='utf-8-sig', sep=None, engine='python')
+            logger.info(f"CSV 로드 완료: {filename}, 행: {len(df)}, 열: {df.shape[1]}")
+            
+            # 데이터 요약 정보 생성
+            data_summary = f"""
+파일명: {filename}
+총 행 수: {len(df)}
+총 열 수: {df.shape[1]}
+컬럼명: {', '.join(df.columns.tolist())}
+
+데이터 타입:
+{df.dtypes.to_string()}
+
+기본 통계:
+{df.describe(include='all').to_string()}
+
+첫 5행 샘플:
+{df.head().to_string()}
+"""
+            
+            # CSV 데이터를 문서로 변환
+            documents = []
+            
+            # 1. 전체 데이터 요약 문서
+            summary_doc = Document(
+                page_content=data_summary,
+                metadata={
+                    "source": filename,
+                    "type": "csv_summary",
+                    "row_count": len(df),
+                    "column_count": df.shape[1]
+                }
+            )
+            documents.append(summary_doc)
+            
+            # 2. 각 행을 개별 문서로 변환
+            for idx, row in df.iterrows():
+                # 행 데이터를 텍스트로 변환
+                row_text = ""
+                for col in df.columns:
+                    value = row[col]
+                    if pd.notna(value):
+                        row_text += f"{col}: {value}\n"
+                
+                if row_text.strip():
+                    doc = Document(
+                        page_content=row_text,
+                        metadata={
+                            "source": filename,
+                            "type": "csv_row",
+                            "row_index": idx,
+                            "row_number": idx + 1
+                        }
+                    )
+                    documents.append(doc)
+            
+            # 3. 컬럼별 분석 문서 추가
+            for col in df.columns:
+                col_info = f"""
+컬럼명: {col}
+데이터 타입: {df[col].dtype}
+고유값 개수: {df[col].nunique()}
+결측값 개수: {df[col].isna().sum()}
+"""
+                if df[col].dtype in ['int64', 'float64']:
+                    col_info += f"""
+평균: {df[col].mean():.2f}
+중앙값: {df[col].median():.2f}
+최솟값: {df[col].min()}
+최댓값: {df[col].max()}
+"""
+                else:
+                    # 문자열 컬럼의 경우 상위 빈도값 표시
+                    top_values = df[col].value_counts().head(10)
+                    col_info += f"""
+상위 10개 값:
+{top_values.to_string()}
+"""
+                
+                col_doc = Document(
+                    page_content=col_info,
+                    metadata={
+                        "source": filename,
+                        "type": "csv_column_analysis",
+                        "column_name": col
+                    }
+                )
+                documents.append(col_doc)
+            
+            logger.info(f"CSV 문서 변환 완료: {len(documents)}개")
+            
+            # 문서 분할 (필요시)
+            chunks = []
+            for doc in documents:
+                if len(doc.page_content) > 1000:
+                    # 긴 문서는 분할
+                    split_docs = self.text_splitter.split_documents([doc])
+                    chunks.extend(split_docs)
+                else:
+                    chunks.append(doc)
+            
+            # 메타데이터 추가
+            for i, chunk in enumerate(chunks):
+                chunk.metadata.update({
+                    'chunk_id': i,
+                    'source_file': filename,
+                    'file_type': 'csv',
+                    'upload_time': datetime.now().isoformat()
+                })
+            
+            logger.info(f"청크 생성 완료: {len(chunks)}개")
+            
+            # 벡터스토어 생성
+            vectorstore = FAISS.from_documents(
+                documents=chunks,
+                embedding=self.embeddings
+            )
+            
+            # 향상된 프롬프트 템플릿
+            enhanced_prompt_template = f"""당신은 업로드된 파일 '{filename}'의 내용을 기반으로 답변하는 AI 전문가입니다.
+
+파일 유형: CSV 데이터
+총 행 수: {len(df)}
+총 열 수: {df.shape[1]}
+컬럼: {', '.join(df.columns.tolist())}
+
+다음 지침을 따라 답변해주세요:
+
+1. **정확성**: 제공된 데이터에 기반하여 정확한 답변을 제공하세요.
+2. **구체성**: 가능한 한 구체적인 숫자, 날짜, 이름 등을 포함하세요.
+3. **분석적 사고**: 데이터의 패턴, 추세, 이상치 등을 파악하여 통찰력 있는 답변을 제공하세요.
+4. **계산 능력**: 필요시 합계, 평균, 비율 등의 계산을 수행하세요.
+5. **시각화 제안**: 데이터를 더 잘 이해할 수 있는 차트나 그래프를 제안할 수 있습니다.
+6. **한국어 답변**: 모든 답변은 명확하고 이해하기 쉬운 한국어로 작성하세요.
+
+컨텍스트:
+{{context}}
+
+대화 기록:
+{{chat_history}}
+
+질문: {{question}}
+
+답변 시 다음 사항을 고려하세요:
+- 데이터에서 직접 확인할 수 있는 정보와 추론한 정보를 구분하세요.
+- 불확실한 정보는 "추정", "약", "대략" 등의 표현을 사용하세요.
+- 데이터에 없는 정보는 "제공된 데이터에서 확인할 수 없습니다"라고 명시하세요.
+- 가능하다면 관련된 다른 데이터 포인트도 함께 제공하세요.
+
+답변:"""
+            
+            # QA 체인 생성
+            llm = ChatOpenAI(
+                temperature=0.3,  # CSV 데이터는 더 정확한 답변을 위해 낮은 temperature
+                model_name="gpt-3.5-turbo",
+                streaming=False
+            )
+            
+            PROMPT = PromptTemplate(
+                template=enhanced_prompt_template,
+                input_variables=["context", "chat_history", "question"]
+            )
+            
+            qa_chain = ConversationalRetrievalChain.from_llm(
+                llm=llm,
+                retriever=vectorstore.as_retriever(
+                    search_type="similarity",
+                    search_kwargs={"k": 10}  # CSV는 더 많은 context 검색
+                ),
+                combine_docs_chain_kwargs={"prompt": PROMPT},
+                return_source_documents=True,
+                verbose=False
+            )
+            
+            # 세션 업데이트
+            session = self.sessions[session_id]
+            session["vectorstore"] = vectorstore
+            session["qa_chain"] = qa_chain
+            session["pdf_name"] = filename
+            session["file_type"] = "csv"
+            session["data_summary"] = {
+                "rows": len(df),
+                "columns": df.shape[1],
+                "column_names": df.columns.tolist()
+            }
+            
+            # 메모리 초기화
+            session["memory"].clear()
+            session["messages_count"] = 0
+            
+            return {
+                "status": "success",
+                "filename": filename,
+                "file_type": "csv",
+                "rows": len(df),
+                "columns": df.shape[1],
+                "chunks": len(chunks)
+            }
+            
+        except Exception as e:
+            logger.error(f"CSV 처리 중 오류: {str(e)}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"CSV 처리 실패: {str(e)}")
+    
+    async def process_file(self, session_id: str, file_path: str, filename: str) -> Dict:
+        """파일 타입에 따라 적절한 처리 메서드 호출"""
+        file_extension = os.path.splitext(filename)[1].lower()
+        
+        if file_extension == ".pdf":
+            return await self.process_pdf(session_id, file_path, filename)
+        elif file_extension == ".csv":
+            return await self.process_csv(session_id, file_path, filename)
+        else:
+            raise HTTPException(status_code=400, detail=f"지원하지 않는 파일 형식: {file_extension}")
+    
+    def get_enhanced_prompt_template(self, filename: str, file_type: str, session_data: Dict) -> str:
+        """파일 타입과 컨텍스트에 맞는 향상된 프롬프트 템플릿 생성"""
+        base_template = f"""당신은 업로드된 파일 '{filename}'의 내용을 기반으로 답변하는 AI 전문가입니다.
+
+다음 지침을 따라 최상의 답변을 제공하세요:
+
+1. **정확성과 신뢰성**
+   - 제공된 문서/데이터에 기반한 정확한 정보만 제공
+   - 추측이나 가정은 명확히 구분하여 표시
+   - 불확실한 정보는 "추정", "대략", "약" 등의 표현 사용
+
+2. **포괄적이고 상세한 답변**
+   - 질문의 모든 측면을 다루도록 노력
+   - 관련된 배경 정보나 맥락도 함께 제공
+   - 필요시 단계별 설명이나 예시 포함
+
+3. **분석적이고 통찰력 있는 접근**
+   - 단순 정보 전달을 넘어 패턴, 관계, 의미 분석
+   - 데이터 간의 연결점과 시사점 도출
+   - 실용적이고 actionable한 인사이트 제공
+
+4. **명확하고 구조화된 커뮤니케이션**
+   - 논리적인 구조로 답변 구성
+   - 필요시 번호, 불릿포인트, 소제목 활용
+   - 전문용어는 쉽게 설명하거나 정의 제공
+
+5. **맥락 인식과 적응**
+   - 이전 대화 내용을 고려한 일관된 답변
+   - 질문자의 의도와 필요를 파악하여 맞춤형 답변
+   - 추가 정보가 도움될 경우 proactive하게 제공
+
+컨텍스트:
+{{context}}
+
+대화 기록:
+{{chat_history}}
+
+질문: {{question}}
+
+답변 시 추가 고려사항:
+- 답변은 한국어로 작성하되, 전문성과 친근함의 균형 유지
+- 데이터/문서에서 직접 확인 가능한 사실과 추론/분석 내용을 구분
+- 질문에 직접적으로 답하지 못할 경우, 관련된 유용한 정보 제공
+- 복잡한 개념은 단계적으로 설명하고 필요시 비유나 예시 활용
+
+답변:"""
+        
+        return base_template
     
     def chat(self, session_id: str, message: str) -> Dict:
         """채팅 응답 생성"""
@@ -553,8 +815,8 @@ async def upload_pdf(
             buffer.write(file_content)
         logger.info(f"파일 저장 완료: {file_path}, 크기: {os.path.getsize(file_path)} bytes")
         
-        # PDF 처리
-        result = await session_manager.process_pdf(session_id, file_path, file.filename)
+        # 파일 처리
+        result = await session_manager.process_file(session_id, file_path, file.filename)
         
         # 업로드 통계 증가
         analytics_data["total_uploads"] += 1
@@ -562,7 +824,10 @@ async def upload_pdf(
         return UploadResponse(
             session_id=session_id,
             filename=file.filename,
-            pages=result["pages"],
+            file_type=result.get("file_type", "pdf"),
+            pages=result.get("pages"),
+            rows=result.get("rows"),
+            columns=result.get("columns"),
             chunks=result["chunks"],
             status="success"
         )

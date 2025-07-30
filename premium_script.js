@@ -1,4 +1,4 @@
-// Premium PDF Chatbot Script with 3D Background and Enhanced UX
+// Premium Document Chatbot Script with 3D Background and Enhanced UX
 
 // API Configuration - Load from config
 const API_URL = window.APP_CONFIG ? window.APP_CONFIG.API_URL : 'http://localhost:8001';
@@ -172,10 +172,10 @@ function setupUploadHandlers() {
     // File input change
     pdfInput.addEventListener('change', (e) => {
         const file = e.target.files[0];
-        if (file && file.type === 'application/pdf') {
+        if (file && (file.type === 'application/pdf' || file.type === 'text/csv' || file.name.endsWith('.csv'))) {
             handleFileUpload(file);
         } else if (file) {
-            showToast('Please select a PDF file', 'error');
+            showToast('Please select a PDF or CSV file', 'error');
         }
     });
     
@@ -196,10 +196,10 @@ function setupUploadHandlers() {
         const files = e.dataTransfer.files;
         if (files.length > 0) {
             const file = files[0];
-            if (file.type === 'application/pdf') {
+            if (file.type === 'application/pdf' || file.type === 'text/csv' || file.name.endsWith('.csv')) {
                 handleFileUpload(file);
             } else {
-                showToast('Please drop a PDF file', 'error');
+                showToast('Please drop a PDF or CSV file', 'error');
             }
         }
     });
@@ -241,10 +241,17 @@ async function handleFileUpload(file) {
     }, 200);
     
     try {
-        progressStatus.textContent = 'Processing PDF...';
+        progressStatus.textContent = 'Processing file...';
         
         console.log(`Uploading to: ${API_URL}/upload`);
         console.log('File:', file.name, 'Size:', file.size);
+        console.log('API_URL:', API_URL);
+        console.log('window.APP_CONFIG:', window.APP_CONFIG);
+        
+        // FormData 내용 확인
+        for (let [key, value] of formData.entries()) {
+            console.log(`FormData - ${key}:`, value);
+        }
         
         const response = await fetch(`${API_URL}/upload`, {
             method: 'POST',
@@ -282,8 +289,15 @@ async function handleFileUpload(file) {
         setTimeout(() => {
             uploadProgress.style.display = 'none';
             uploadSuccess.style.display = 'block';
-            document.getElementById('success-info').textContent = 
-                `${result.filename} • ${result.pages} pages • ${result.chunks} chunks`;
+            // Display file info based on type
+            let infoText = `${result.filename} • `;
+            if (result.file_type === 'csv') {
+                infoText += `${result.rows} rows • ${result.columns} columns • `;
+            } else {
+                infoText += `${result.pages} pages • `;
+            }
+            infoText += `${result.chunks} chunks`;
+            document.getElementById('success-info').textContent = infoText;
             
             // Update stats
             updateStats();
@@ -291,18 +305,27 @@ async function handleFileUpload(file) {
             // Enable chat
             enableChat();
             
-            showToast('PDF uploaded successfully!', 'success');
+            showToast('File uploaded successfully!', 'success');
         }, 500);
         
     } catch (error) {
         console.error('Upload error:', error);
+        console.error('Error type:', error.constructor.name);
+        console.error('Error stack:', error.stack);
         clearInterval(progressInterval);
         
         // Reset upload
         uploadProgress.style.display = 'none';
         uploadContent.style.display = 'block';
         
-        showToast(error.message || 'Upload failed. Please try again.', 'error');
+        // 더 자세한 에러 메시지
+        let errorMessage = 'Upload failed. ';
+        if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+            errorMessage += 'Network error - please check your connection.';
+        } else {
+            errorMessage += error.message || 'Please try again.';
+        }
+        showToast(errorMessage, 'error');
     }
 }
 
@@ -379,7 +402,7 @@ function disableChat() {
     
     chatInput.disabled = true;
     sendButton.disabled = true;
-    chatInput.placeholder = 'Please upload a PDF first...';
+    chatInput.placeholder = 'Please upload a file first...';
 }
 
 // Send Message
@@ -538,7 +561,7 @@ function clearChat() {
         <div class="chat-welcome">
             <i class="fas fa-robot chat-welcome-icon"></i>
             <h3>Welcome to AI Nexus</h3>
-            <p>Upload a PDF document to start asking questions</p>
+            <p>Upload a PDF or CSV file to start asking questions</p>
         </div>
     `;
 }
@@ -617,7 +640,7 @@ async function loadSession(sessionId) {
             startChat();
         } else {
             disableChat();
-            showToast('This session has no PDF loaded', 'warning');
+            showToast('This session has no file loaded', 'warning');
         }
         
     } catch (error) {
