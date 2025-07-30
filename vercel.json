@@ -35,8 +35,5 @@
       "src": "/(.*)",
       "dest": "/premium_index.html"
     }
-  ],
-  "env": {
-    "OPENAI_API_KEY": "@openai-api-key"
-  }
+  ]
 }
