@@ -1,7 +1,10 @@
 {
   "version": 2,
-  "name": "rag-web-svc",
   "builds": [
+    {
+      "src": "api/*.py",
+      "use": "@vercel/python"
+    },
     {
       "src": "premium_index.html",
       "use": "@vercel/static"
@@ -17,20 +20,25 @@
   ],
   "routes": [
     {
-      "src": "/(.*)",
-      "headers": {
-        "Cache-Control": "s-maxage=86400",
-        "X-Frame-Options": "DENY",
-        "X-Content-Type-Options": "nosniff",
-        "X-XSS-Protection": "1; mode=block"
-      },
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*\\.(js|css|ico|png|jpg|jpeg|gif|svg))",
       "dest": "/$1"
     },
     {
-      "src": "/",
+      "src": "/(.*)",
       "dest": "/premium_index.html"
     }
   ],
-  "outputDirectory": ".",
-  "public": true
+  "env": {
+    "OPENAI_API_KEY": "@openai-api-key"
+  },
+  "functions": {
+    "api/*.py": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
 }

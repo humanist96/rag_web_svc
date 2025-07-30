@@ -1,0 +1,13 @@
+# Vercel Functions requirements
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+openai
+langchain
+langchain-community
+langchain-openai
+faiss-cpu
+pypdf
+tiktoken
+aiofiles

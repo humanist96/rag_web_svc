@@ -1,6 +1,6 @@
-# Vercel 배포 가이드
+# Vercel 통합 배포 가이드
 
-## 🚀 프론트엔드 Vercel 배포
+## 🚀 프론트엔드 + 백엔드 Vercel 배포
 
 ### 사전 준비
 - Vercel CLI 설치됨: `npm install -g vercel`
@@ -77,11 +77,29 @@ GitHub 연결 시 자동 배포 가능:
 }
 ```
 
-## 백엔드 정보
+## 통합 배포 구조
 
-백엔드는 여전히 Render.com에서 실행 중:
-- **URL**: https://rag-web-svc.onrender.com
-- **API Docs**: https://rag-web-svc.onrender.com/docs
+### 프론트엔드
+- 정적 파일들 (HTML, CSS, JS)
+- Vercel CDN으로 제공
+
+### 백엔드 (Serverless Functions)
+- `/api/health` - 헬스 체크
+- `/api/upload` - PDF 업로드
+- `/api/query` - AI 쿼리
+
+## 환경 변수 설정
+
+### 1. Vercel CLI로 설정
+```bash
+vercel env add OPENAI_API_KEY
+```
+
+### 2. Vercel Dashboard에서 설정
+1. https://vercel.com/dashboard
+2. 프로젝트 선택
+3. Settings → Environment Variables
+4. `OPENAI_API_KEY` 추가
 
 ## 테스트
 

@@ -54,3 +54,5 @@ nul
 dist/
 build/
 *.egg-info/.vercel
+
+.vercel

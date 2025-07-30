@@ -4,7 +4,7 @@ const config = {
         API_URL: 'http://localhost:8001'
     },
     production: {
-        API_URL: 'https://rag-web-svc.onrender.com' // Backend still on Render
+        API_URL: '' // Same origin on Vercel
     }
 };
 
