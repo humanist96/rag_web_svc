@@ -12,16 +12,22 @@
 3. `humanist96/rag_web_svc` 리포지토리 선택
 
 ### 3. 서비스 설정
-다음 정보를 입력하세요:
+
+**중요: Render가 Node.js 프로젝트로 자동 감지할 수 있으므로 Python을 명시적으로 선택해야 합니다.**
 
 **Basic Settings:**
 - Name: `rag-web-svc-backend`
 - Region: `Oregon (US West)`
 - Branch: `master`
 - Root Directory: (비워두기 - 루트 디렉토리 사용)
-- Environment: `Python 3`
-- Build Command: `pip install -r requirements_deploy.txt`
+- **Environment: `Python 3` (중요! Docker가 아닌 Python 선택)**
+- Build Command: `pip install -r requirements.txt`
 - Start Command: `uvicorn enhanced_rag_chatbot:app --host 0.0.0.0 --port $PORT`
+
+**만약 Environment 선택이 없다면:**
+1. "You can use Render's native environments" 섹션에서
+2. "Python 3" 선택
+3. 또는 Settings > Environment에서 Python으로 변경
 
 ### 4. 환경 변수 설정
 "Advanced" 섹션을 열고 다음 환경 변수를 추가:
@@ -92,9 +98,17 @@
 
 ## 문제 해결
 
+### "yarn" 또는 "package.json" 오류 발생 시
+**이것은 Render가 프로젝트를 Node.js로 잘못 인식했을 때 발생합니다.**
+
+해결 방법:
+1. Render Dashboard에서 현재 서비스의 Settings 탭으로 이동
+2. "Environment" 섹션에서 "Python 3"로 변경
+3. 또는 서비스를 삭제하고 다시 생성할 때 Python 선택
+
 ### 배포 실패 시
 1. Build logs에서 에러 메시지 확인
-2. requirements_deploy.txt의 패키지 버전 확인
+2. requirements.txt 파일이 있는지 확인
 3. Python 버전 호환성 확인
 
 ### CORS 에러
