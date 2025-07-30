@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Project specific
+.env
+uploads/
+*.pdf
+*.log
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+README.md
+DEPLOYMENT_GUIDE.md
+RENDER_DEPLOYMENT.md
+RENDER_MANUAL_SETUP.md
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Test files
+test_*.py
+*_test.py
+
+# Deployment files (not needed in Docker)
+render.yaml
+runtime.txt
+build.sh
