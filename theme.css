@@ -1,0 +1,285 @@
+/* Theme System - CSS Variables for Dark/Light Mode */
+
+/* Dark Theme (Default) */
+:root {
+    /* Primary Colors */
+    --primary-color: #8b5cf6;
+    --primary-hover: #7c3aed;
+    --primary-light: #a78bfa;
+    --primary-dark: #6d28d9;
+    
+    /* Background Colors */
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #1a1a1a;
+    --bg-tertiary: #2a2a2a;
+    --bg-card: rgba(255, 255, 255, 0.05);
+    --bg-hover: rgba(255, 255, 255, 0.08);
+    --bg-glass: rgba(255, 255, 255, 0.05);
+    
+    /* Text Colors */
+    --text-primary: #ffffff;
+    --text-secondary: #e5e5e5;
+    --text-tertiary: #a5a5a5;
+    --text-muted: #737373;
+    
+    /* Border Colors */
+    --border-primary: rgba(255, 255, 255, 0.1);
+    --border-secondary: rgba(255, 255, 255, 0.05);
+    --border-hover: rgba(139, 92, 246, 0.5);
+    
+    /* Status Colors */
+    --success-color: #22c55e;
+    --success-bg: rgba(34, 197, 94, 0.2);
+    --success-border: rgba(34, 197, 94, 0.5);
+    
+    --error-color: #ef4444;
+    --error-bg: rgba(239, 68, 68, 0.2);
+    --error-border: rgba(239, 68, 68, 0.5);
+    
+    --warning-color: #fbbf24;
+    --warning-bg: rgba(251, 191, 36, 0.2);
+    --warning-border: rgba(251, 191, 36, 0.5);
+    
+    --info-color: #3b82f6;
+    --info-bg: rgba(59, 130, 246, 0.2);
+    --info-border: rgba(59, 130, 246, 0.5);
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    --shadow-glow: 0 0 20px rgba(139, 92, 246, 0.4);
+    
+    /* Gradient */
+    --gradient-primary: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+    --gradient-secondary: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
+    
+    /* Misc */
+    --scrollbar-bg: #1a1a1a;
+    --scrollbar-thumb: #4a4a4a;
+    --code-bg: #1e1e1e;
+    --overlay-bg: rgba(0, 0, 0, 0.8);
+}
+
+/* Light Theme */
+[data-theme="light"] {
+    /* Primary Colors */
+    --primary-color: #7c3aed;
+    --primary-hover: #6d28d9;
+    --primary-light: #8b5cf6;
+    --primary-dark: #5b21b6;
+    
+    /* Background Colors */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9fafb;
+    --bg-tertiary: #f3f4f6;
+    --bg-card: rgba(0, 0, 0, 0.02);
+    --bg-hover: rgba(0, 0, 0, 0.04);
+    --bg-glass: rgba(255, 255, 255, 0.8);
+    
+    /* Text Colors */
+    --text-primary: #111827;
+    --text-secondary: #374151;
+    --text-tertiary: #6b7280;
+    --text-muted: #9ca3af;
+    
+    /* Border Colors */
+    --border-primary: rgba(0, 0, 0, 0.1);
+    --border-secondary: rgba(0, 0, 0, 0.05);
+    --border-hover: rgba(124, 58, 237, 0.5);
+    
+    /* Status Colors */
+    --success-color: #16a34a;
+    --success-bg: rgba(22, 163, 74, 0.1);
+    --success-border: rgba(22, 163, 74, 0.3);
+    
+    --error-color: #dc2626;
+    --error-bg: rgba(220, 38, 38, 0.1);
+    --error-border: rgba(220, 38, 38, 0.3);
+    
+    --warning-color: #f59e0b;
+    --warning-bg: rgba(245, 158, 11, 0.1);
+    --warning-border: rgba(245, 158, 11, 0.3);
+    
+    --info-color: #2563eb;
+    --info-bg: rgba(37, 99, 235, 0.1);
+    --info-border: rgba(37, 99, 235, 0.3);
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    --shadow-glow: 0 0 20px rgba(124, 58, 237, 0.2);
+    
+    /* Gradient */
+    --gradient-primary: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+    --gradient-secondary: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+    
+    /* Misc */
+    --scrollbar-bg: #f3f4f6;
+    --scrollbar-thumb: #d1d5db;
+    --code-bg: #f9fafb;
+    --overlay-bg: rgba(0, 0, 0, 0.5);
+}
+
+/* Common Theme Styles */
+body {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--scrollbar-bg);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-color);
+}
+
+/* Glass Effect */
+.glass {
+    background: var(--bg-glass);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid var(--border-primary);
+}
+
+/* Card Styles */
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-primary);
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-hover);
+    box-shadow: var(--shadow-glow);
+}
+
+/* Button Styles */
+.btn {
+    transition: all 0.3s ease;
+}
+
+.btn-primary {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: var(--primary-hover);
+}
+
+/* Input Styles */
+input, textarea, select {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-primary);
+    transition: all 0.3s ease;
+}
+
+input:focus, textarea:focus, select:focus {
+    border-color: var(--primary-color);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+    position: relative;
+    width: 60px;
+    height: 30px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-primary);
+    border-radius: 15px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+
+.theme-toggle-slider {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 24px;
+    height: 24px;
+    background: var(--primary-color);
+    border-radius: 50%;
+    transition: transform 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.theme-toggle-slider i {
+    color: white;
+    font-size: 14px;
+}
+
+[data-theme="light"] .theme-toggle-slider {
+    transform: translateX(30px);
+}
+
+.theme-toggle:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-in {
+    animation: fadeIn 0.3s ease;
+}
+
+/* Utility Classes */
+.bg-primary { background-color: var(--bg-primary); }
+.bg-secondary { background-color: var(--bg-secondary); }
+.bg-tertiary { background-color: var(--bg-tertiary); }
+
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+.text-tertiary { color: var(--text-tertiary); }
+.text-muted { color: var(--text-muted); }
+
+.border-primary { border-color: var(--border-primary); }
+.border-secondary { border-color: var(--border-secondary); }
+
+/* Responsive Theme Adjustments */
+@media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+        /* Auto switch to light theme if user prefers light mode and hasn't manually selected dark */
+    }
+}
+
+/* Smooth Theme Transition */
+* {
+    transition: background-color 0.3s ease, 
+                color 0.3s ease, 
+                border-color 0.3s ease,
+                box-shadow 0.3s ease;
+}
