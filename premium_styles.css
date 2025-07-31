@@ -234,6 +234,51 @@ body {
     color: var(--text-primary);
 }
 
+/* Model Status Display */
+.model-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--surface);
+    border-radius: var(--radius-full);
+    margin-right: 12px;
+    cursor: pointer;
+    transition: all var(--transition-base);
+    border: 1px solid var(--border-primary);
+}
+
+.model-status:hover {
+    background: var(--surface-hover);
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+}
+
+.model-status i {
+    color: var(--primary-color);
+    font-size: 1rem;
+}
+
+.model-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.2;
+}
+
+.model-provider {
+    font-size: 0.7rem;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.model-name {
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
 .status-indicator {
     display: flex;
     align-items: center;

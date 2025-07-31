@@ -11,6 +11,18 @@
       "use": "@vercel/static"  
     },
     {
+      "src": "enhanced_*.{js,css}",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "embedding_*.{js,css}",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "DEPLOYMENT.md",
+      "use": "@vercel/static"
+    },
+    {
       "src": "*.{js,css,png,jpg,jpeg,gif,svg,ico}",
       "use": "@vercel/static"
     }

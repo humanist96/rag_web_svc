@@ -30,9 +30,11 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
-from langchain_openai import ChatOpenAI
 from langchain.prompts import PromptTemplate
 from langchain_community.document_loaders import PyPDFLoader, CSVLoader
+from llm_providers import llm_manager, ModelConfig, LLMProviderFactory
+from streaming_handler import create_streaming_response, StreamingResponseFormatter
+from model_specific_prompts import prompt_optimizer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 import pandas as pd
@@ -52,6 +54,10 @@ except ImportError:
     PromptOptimizer = None
     ResponseFormatter = None
 
+from session_storage import SessionStorage
+from context_relevance_checker import ContextRelevanceChecker
+from qa_response_formatter import QAResponseFormatter
+
 # Load environment variables
 load_dotenv()
 
@@ -66,14 +72,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 세션 저장소 초기화
+session_storage = SessionStorage()
+storage_data = session_storage.load_data()
+
 # Global variables
 sessions = {}  # 세션별 벡터스토어 및 QA 체인 관리
-session_history = {}  # 세션별 업로드 파일 히스토리
-memory_usage = {  # 메모리 사용량 추적
-    "total_size_bytes": 0,
-    "session_sizes": {},
-    "last_cleanup": datetime.now()
-}
+session_history = storage_data["session_history"]  # 세션별 업로드 파일 히스토리
+memory_usage = storage_data["memory_usage"]  # 메모리 사용량 추적
+
+# 테스트 데이터 초기화 함수
+def initialize_test_data():
+    """개발 환경에서 테스트 데이터 생성"""
+    if not session_history:  # 비어있을 때만 초기화
+        test_session_id = "test-" + str(uuid.uuid4())[:8]
+        session_history[test_session_id] = {
+            "session_id": test_session_id,
+            "created_at": datetime.now() - timedelta(hours=2),
+            "last_accessed": datetime.now() - timedelta(minutes=30),
+            "files": [
+                {
+                    "filename": "sample_document.pdf",
+                    "file_type": "pdf",
+                    "upload_time": datetime.now() - timedelta(hours=1),
+                    "file_size": 1024 * 500,  # 500KB
+                    "pages": 10,
+                    "chunks": 25
+                }
+            ],
+            "total_queries": 5,
+            "memory_size_mb": 2.5
+        }
+        memory_usage["session_sizes"][test_session_id] = 2.5 * 1024 * 1024
+        memory_usage["total_size_bytes"] = 2.5 * 1024 * 1024
+        logger.info(f"테스트 데이터 생성 완료: {test_session_id}")
 analytics_data = {  # 분석 데이터 저장
     "total_uploads": 0,
     "total_queries": 0,
@@ -163,7 +195,8 @@ class AnalyticsResponse(BaseModel):
 # Session manager class
 class SessionManager:
     def __init__(self):
-        self.sessions = {}
+        # 전역 sessions 변수 사용
+        self.sessions = sessions  # 전역 변수 참조
         self.embeddings = OpenAIEmbeddings()
         # 최적화된 텍스트 분할 설정
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -173,13 +206,18 @@ class SessionManager:
             length_function=len,
             is_separator_regex=False
         )
+        # 컨텍스트 관련성 검사기
+        self.relevance_checker = ContextRelevanceChecker()
+        # Q&A 응답 포맷터
+        self.qa_formatter = QAResponseFormatter()
     
     def create_session(self, session_id: str = None) -> str:
         """새 세션 생성"""
         if not session_id:
             session_id = str(uuid.uuid4())
         
-        self.sessions[session_id] = {
+        # 전역 sessions 변수에 추가
+        sessions[session_id] = self.sessions[session_id] = {
             "vectorstore": None,
             "qa_chain": None,
             "memory": ConversationBufferMemory(
@@ -221,6 +259,22 @@ class SessionManager:
             
             # 세션 데이터 삭제
             del self.sessions[session_id]
+            if session_id in sessions:
+                del sessions[session_id]
+            
+            # 히스토리에서도 삭제
+            if session_id in session_history:
+                del session_history[session_id]
+            
+            # 메모리 사용량에서도 삭제
+            if session_id in memory_usage["session_sizes"]:
+                del memory_usage["session_sizes"][session_id]
+                memory_usage["total_size_bytes"] = sum(memory_usage["session_sizes"].values())
+            
+            # 저장소 업데이트
+            session_storage.save_session_history(session_history)
+            session_storage.save_memory_usage(memory_usage)
+            
             logger.info(f"세션 삭제 완료: {session_id}")
     
     def cleanup_old_sessions(self, hours: int = 24):
@@ -407,19 +461,25 @@ class SessionManager:
             )
             
             # QA 체인 생성 - 향상된 설정
-            llm = ChatOpenAI(
-                temperature=0.5,  # 더 일관된 응답을 위해 약간 낮춤
-                model_name="gpt-3.5-turbo-16k",  # 더 긴 컨텍스트 처리
-                streaming=True,  # 스트리밍 응답 활성화
-                max_tokens=2000  # 충분한 응답 길이
-            )
+            # 현재 설정된 LLM 사용
+            llm = llm_manager.get_chat_model()
             
-            # 향상된 PDF 프롬프트 템플릿
-            prompt_template = self.get_enhanced_prompt_template(filename, "pdf", {"pages": len(documents)})
+            # 모델별 최적화된 프롬프트 가져오기
+            model_info = llm_manager.get_model_info()
+            model_name = model_info.get("model", "gpt-3.5-turbo-16k")
             
-            PROMPT = PromptTemplate(
-                template=prompt_template,
-                input_variables=["context", "chat_history", "question"]
+            # 기본 작업 유형은 'qa'
+            file_info = {
+                "filename": filename,
+                "file_type": "pdf"
+            }
+            metadata = {"pages": len(documents)}
+            
+            PROMPT = prompt_optimizer.get_optimized_prompt(
+                model_name=model_name,
+                task_type="qa",
+                file_info=file_info,
+                metadata=metadata
             )
             
             qa_chain = ConversationalRetrievalChain.from_llm(
@@ -493,6 +553,42 @@ class SessionManager:
             for encoding in encodings:
                 try:
                     df = pd.read_csv(file_path, encoding=encoding, sep=None, engine='python')
+                    
+                    # Unnamed 컬럼 처리
+                    # 1. 완전히 비어있는 Unnamed 컬럼 제거
+                    unnamed_cols = [col for col in df.columns if col.startswith('Unnamed:')]
+                    for col in unnamed_cols:
+                        if df[col].isna().all():
+                            df = df.drop(columns=[col])
+                            logger.info(f"빈 Unnamed 컬럼 제거: {col}")
+                    
+                    # 2. 인덱스로 보이는 Unnamed 컬럼 처리
+                    if len(df.columns) > 0 and df.columns[0].startswith('Unnamed: 0'):
+                        # 첫 번째 컬럼이 인덱스인 경우
+                        if df.iloc[:, 0].astype(str).str.match(r'^\d+$').all():
+                            df = df.drop(columns=[df.columns[0]])
+                            logger.info("인덱스 컬럼 제거")
+                    
+                    # 3. 남은 Unnamed 컬럼 이름 변경
+                    rename_dict = {}
+                    unnamed_count = 1
+                    for col in df.columns:
+                        if col.startswith('Unnamed:'):
+                            # 해당 컬럼의 첫 번째 non-null 값을 컬럼명으로 사용
+                            first_value = df[col].dropna().iloc[0] if not df[col].dropna().empty else None
+                            if first_value and isinstance(first_value, str) and len(first_value) < 50:
+                                rename_dict[col] = first_value
+                                # 첫 번째 행이 헤더였다면 제거
+                                if df[col].iloc[0] == first_value:
+                                    df = df.iloc[1:].reset_index(drop=True)
+                            else:
+                                rename_dict[col] = f"Column_{unnamed_count}"
+                                unnamed_count += 1
+                    
+                    if rename_dict:
+                        df = df.rename(columns=rename_dict)
+                        logger.info(f"Unnamed 컬럼 이름 변경: {rename_dict}")
+                    
                     logger.info(f"CSV 로드 성공 - 인코딩: {encoding}")
                     break
                 except Exception as e:
@@ -672,17 +768,40 @@ class SessionManager:
 
 답변:"""
             
-            # QA 체인 생성 - CSV용 향상된 설정
-            llm = ChatOpenAI(
-                temperature=0.2,  # CSV 데이터는 더 정확한 답변을 위해 더 낮은 temperature
-                model_name="gpt-3.5-turbo-16k",  # 대용량 데이터 처리
-                streaming=True,
-                max_tokens=2000
-            )
+            # 모델별 최적화된 설정 가져오기
+            model_info = llm_manager.get_model_info()
+            model_name = model_info.get("model", "gpt-3.5-turbo-16k")
             
-            PROMPT = PromptTemplate(
-                template=enhanced_prompt_template,
-                input_variables=["context", "chat_history", "question"]
+            # CSV는 'analysis' 타입으로 처리
+            file_info = {
+                "filename": filename,
+                "file_type": "csv"
+            }
+            csv_metadata = {
+                "rows": len(df),
+                "columns": df.shape[1]
+            }
+            
+            # 모델별 최적 파라미터 가져오기
+            optimal_params = prompt_optimizer.get_model_specific_params(model_name, "analysis")
+            
+            # CSV용 설정 (분석 작업에 최적화)
+            csv_config = ModelConfig(
+                provider=model_info.get("provider", "openai"),
+                model_name=model_name,
+                temperature=optimal_params["temperature"],
+                max_tokens=optimal_params["max_tokens"],
+                streaming=True
+            )
+            llm_manager.set_config(csv_config)
+            llm = llm_manager.get_chat_model()
+            
+            # 모델별 최적화된 프롬프트
+            PROMPT = prompt_optimizer.get_optimized_prompt(
+                model_name=model_name,
+                task_type="analysis",
+                file_info=file_info,
+                metadata=csv_metadata
             )
             
             qa_chain = ConversationalRetrievalChain.from_llm(
@@ -770,7 +889,8 @@ class SessionManager:
         # Use advanced prompt templates if available
         if AdvancedPromptTemplates:
             metadata = session_data.get('metadata', {})
-            return AdvancedPromptTemplates.get_enhanced_base_template(filename, file_type, metadata)
+            # Q&A 스타일 템플릿을 기본으로 사용
+            return AdvancedPromptTemplates.get_qa_style_template(filename, file_type, metadata)
         
         # Fallback to original template
         base_template = f"""당신은 업로드된 파일 '{filename}'의 내용을 기반으로 답변하는 AI 전문가입니다.
@@ -833,6 +953,55 @@ class SessionManager:
             # 옵션 처리
             options = options or {}
             
+            # 컨텍스트 관련성 검사
+            if session.get("vectorstore"):
+                # 벡터스토어에서 문서 청크 가져오기
+                try:
+                    # 샘플 문서 가져오기 (관련성 검사용)
+                    retriever = session["vectorstore"].as_retriever(search_kwargs={"k": 20})
+                    sample_docs = retriever.get_relevant_documents("")  # 빈 쿼리로 전체 샘플
+                    document_chunks = [doc.page_content for doc in sample_docs]
+                except:
+                    document_chunks = []
+                
+                # 관련성 검사
+                is_relevant, relevance_score, rejection_message = self.relevance_checker.check_relevance(
+                    message, document_chunks
+                )
+                
+                logger.info(f"질문 관련성 점수: {relevance_score:.3f} - {'관련' if is_relevant else '무관'}")
+                
+                # 관련 없는 질문 처리
+                if not is_relevant:
+                    # 활동 로그에 기록
+                    if session_id in session_history:
+                        session_storage.add_session_log(session_id, "off_topic_query", {
+                            "question": message[:100],
+                            "relevance_score": relevance_score
+                        })
+                    
+                    # 질문 힌트 생성
+                    hints = self.relevance_checker.get_contextual_hints(document_chunks, max_hints=3)
+                    
+                    return {
+                        "answer": rejection_message,
+                        "sources": [],
+                        "suggestions": hints,
+                        "relevance_score": relevance_score,
+                        "is_off_topic": True
+                    }
+            
+            # 작업 유형 감지 및 모델 파라미터 최적화
+            task_type = prompt_optimizer.detect_task_type(message)
+            logger.info(f"감지된 작업 유형: {task_type}")
+            
+            # 현재 모델에 맞게 temperature 조정
+            model_info = llm_manager.get_model_info()
+            model_name = model_info.get("model", "gpt-3.5-turbo-16k")
+            
+            # 작업 유형에 따른 최적 파라미터 적용
+            optimal_params = prompt_optimizer.get_model_specific_params(model_name, task_type)
+            
             # 질문 최적화
             if PromptOptimizer:
                 enhanced_message = PromptOptimizer.enhance_question(message, session.get("file_type"))
@@ -851,6 +1020,15 @@ class SessionManager:
             if session_id in session_history:
                 session_history[session_id]["last_accessed"] = datetime.now()
                 session_history[session_id]["total_queries"] += 1
+                
+                # 저장소에 저장
+                session_storage.save_session_history(session_history)
+                
+                # 활동 로그 추가
+                session_storage.add_session_log(session_id, "query", {
+                    "question": message[:100],  # 처음 100자만 저장
+                    "response_time": 0  # 나중에 업데이트
+                })
             
             # QA 체인 실행
             result = session["qa_chain"]({
@@ -862,21 +1040,38 @@ class SessionManager:
             response_time = time.time() - start_time
             self.track_analytics(message, result["answer"], response_time)
             
-            # 소스 문서 정리
+            # 소스 문서 정리 - 의미 있는 소스만 포함
             sources = []
             if "source_documents" in result:
                 for doc in result["source_documents"][:3]:
-                    sources.append({
-                        "content": doc.page_content[:200] + "...",
-                        "metadata": doc.metadata
-                    })
+                    # 실제로 답변에 기여한 소스인지 확인
+                    content = doc.page_content.strip()
+                    if content and len(content) > 20:  # 최소 20자 이상의 의미있는 내용
+                        # 답변과의 관련성 체크 (간단한 키워드 매칭)
+                        answer_lower = result["answer"].lower()
+                        content_lower = content.lower()
+                        
+                        # 답변에 포함된 키워드가 소스에도 있는지 확인
+                        answer_keywords = set(answer_lower.split())
+                        content_keywords = set(content_lower.split())
+                        
+                        # 공통 키워드가 3개 이상이면 관련 있다고 판단
+                        common_keywords = answer_keywords & content_keywords
+                        if len(common_keywords) >= 3 or len(content) > 100:
+                            sources.append({
+                                "content": content[:200] + "..." if len(content) > 200 else content,
+                                "metadata": doc.metadata
+                            })
             
-            # 응답 포맷팅
+            # Q&A 스타일 응답 포맷팅
+            formatted_response = self.qa_formatter.format_qa_response(message, result["answer"])
+            
+            # 추가 마크다운 포맷팅
             if ResponseFormatter:
-                formatted_answer = ResponseFormatter.format_with_markdown(result["answer"])
+                formatted_answer = ResponseFormatter.format_with_markdown(formatted_response["full_formatted"])
                 formatted_answer = ResponseFormatter.add_visual_elements(formatted_answer, session.get("file_type"))
             else:
-                formatted_answer = result["answer"]
+                formatted_answer = formatted_response["full_formatted"]
             
             # 메모리에 대화 저장
             session["memory"].chat_memory.add_user_message(message)
@@ -985,6 +1180,13 @@ class SessionManager:
         
         # 메모리 사용량 업데이트
         self.update_memory_usage(session_id)
+        
+        # 저장소에 저장
+        session_storage.save_session_history(session_history)
+        session_storage.save_memory_usage(memory_usage)
+        
+        # 활동 로그 추가
+        session_storage.add_session_log(session_id, "file_uploaded", file_history)
     
     def update_memory_usage(self, session_id: str) -> None:
         """세션의 메모리 사용량 업데이트"""
@@ -1006,6 +1208,9 @@ class SessionManager:
     
     def get_session_history(self, session_id: str = None) -> List[Dict]:
         """세션 히스토리 조회"""
+        logger.info(f"SessionManager.get_session_history 호출 - session_id: {session_id}")
+        logger.info(f"session_history 키 목록: {list(session_history.keys())}")
+        
         if session_id:
             return [session_history[session_id]] if session_id in session_history else []
         else:
@@ -1113,6 +1318,10 @@ async def lifespan(app: FastAPI):
     
     # 업로드 디렉토리 생성
     os.makedirs("uploads", exist_ok=True)
+    
+    # 개발 환경에서만 테스트 데이터 생성
+    if os.getenv("ENVIRONMENT", "development") == "development":
+        initialize_test_data()
     
     yield
     
@@ -1232,8 +1441,52 @@ async def root():
         "status": "healthy",
         "environment": "production" if IS_PRODUCTION else "development",
         "sessions_count": len(session_manager.sessions),
-        "version": "1.0.0"
+        "version": "2.0.0"
     }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring"""
+    try:
+        # 기본적인 시스템 체크
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "version": "2.0.0",
+            "environment": "production" if IS_PRODUCTION else "development",
+            "checks": {
+                "memory_usage": f"{memory_usage['total_size_bytes'] / (1024*1024):.2f}MB",
+                "active_sessions": len(sessions),
+                "total_sessions": len(session_history),
+                "openai_api": "checking..."
+            }
+        }
+        
+        # OpenAI API 연결 체크 (간단히)
+        try:
+            import openai
+            # API 키가 설정되어 있는지만 확인
+            if os.getenv("OPENAI_API_KEY"):
+                health_status["checks"]["openai_api"] = "configured"
+            else:
+                health_status["checks"]["openai_api"] = "not configured"
+                health_status["status"] = "degraded"
+        except Exception as e:
+            health_status["checks"]["openai_api"] = f"error: {str(e)}"
+            health_status["status"] = "degraded"
+        
+        return health_status
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+        )
 
 @app.get("/favicon.ico")
 async def favicon():
@@ -1384,41 +1637,35 @@ async def chat_stream_endpoint(request: ChatRequest):
             # 세션 확인
             session = session_manager.get_session(request.session_id)
             if not session:
-                yield f"data: {json.dumps({'error': '세션을 찾을 수 없습니다'})}\n\n"
+                yield StreamingResponseFormatter.format_error_message('세션을 찾을 수 없습니다')
                 return
             
             if not session["qa_chain"]:
-                yield f"data: {json.dumps({'error': '먼저 파일을 업로드해주세요'})}\n\n"
+                yield StreamingResponseFormatter.format_error_message('먼저 파일을 업로드해주세요')
                 return
             
-            # 스트리밍 응답 시뮬레이션
-            result = session_manager.chat(
-                session_id=request.session_id,
-                message=request.message,
-                options=request.options
-            )
+            # 현재 모델 정보 가져오기
+            model_info = llm_manager.get_model_info()
+            provider = model_info.get("provider", "openai")
+            model = model_info.get("model", "gpt-3.5-turbo-16k")
             
-            # 응답을 청크로 나누어 스트리밍
-            answer = result["answer"]
-            words = answer.split()
-            current_chunk = ""
+            # 스트리밍 응답 생성
+            qa_chain = session["qa_chain"]
+            chat_history = session["memory"].chat_memory.messages
             
-            for i, word in enumerate(words):
-                current_chunk += word + " "
-                if i % 5 == 0:  # 5단어마다 전송
-                    yield f"data: {json.dumps({'content': current_chunk})}\n\n"
-                    await asyncio.sleep(0.05)  # 타이핑 효과
-            
-            # 남은 텍스트 전송
-            if current_chunk.strip():
-                yield f"data: {json.dumps({'content': current_chunk})}\n\n"
-            
-            # 완료 신호
-            yield f"data: [DONE]\n\n"
+            async for chunk in create_streaming_response(
+                qa_chain=qa_chain,
+                question=request.message,
+                chat_history=chat_history,
+                provider=provider,
+                model=model
+            ):
+                yield chunk
             
         except Exception as e:
             logger.error(f"스트리밍 중 오류: {str(e)}")
-            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield StreamingResponseFormatter.format_error_message(str(e))
+            yield StreamingResponseFormatter.format_complete_message()
     
     return StreamingResponse(
         generate(),
@@ -1474,6 +1721,10 @@ async def list_sessions():
 @app.get("/session-history")
 async def get_session_history(session_id: Optional[str] = None):
     """세션 히스토리 조회"""
+    logger.info(f"세션 히스토리 조회 요청 - session_id: {session_id}")
+    logger.info(f"현재 전체 세션 히스토리 수: {len(session_history)}")
+    logger.info(f"현재 활성 세션 수: {len(sessions)}")
+    
     history = session_manager.get_session_history(session_id)
     
     # datetime을 문자열로 변환
@@ -1558,7 +1809,9 @@ async def manage_memory(request: MemoryManagementRequest):
 @app.get("/memory-stats")
 async def get_memory_stats():
     """메모리 사용 통계 조회"""
+    logger.info("메모리 통계 조회 요청")
     stats = session_manager.get_memory_stats()
+    logger.info(f"메모리 통계: {stats}")
     
     # 메모리 제한 체크
     if stats["usage_percent"] > 80:
@@ -1566,6 +1819,22 @@ async def get_memory_stats():
         stats = session_manager.get_memory_stats()  # 정리 후 다시 조회
     
     return stats
+
+@app.get("/session/{session_id}/logs")
+async def get_session_logs(session_id: str):
+    """세션 활동 로그 조회"""
+    logger.info(f"세션 로그 조회 요청: {session_id}")
+    
+    logs = session_storage.get_session_logs(session_id)
+    
+    # datetime을 문자열로 변환
+    formatted_logs = []
+    for log in logs:
+        formatted_log = log.copy()
+        formatted_log["timestamp"] = log["timestamp"].isoformat()
+        formatted_logs.append(formatted_log)
+    
+    return {"session_id": session_id, "logs": formatted_logs}
 
 @app.get("/analytics", response_model=AnalyticsResponse)
 async def get_analytics():
@@ -1594,6 +1863,96 @@ async def get_analytics():
         daily_usage=daily_usage,
         average_response_time=avg_response_time
     )
+
+# LLM 모델 관리 엔드포인트
+@app.get("/models")
+async def get_available_models():
+    """사용 가능한 모든 LLM 모델 목록 조회"""
+    try:
+        all_models = LLMProviderFactory.get_all_models()
+        current_model = llm_manager.get_model_info()
+        
+        return {
+            "current_model": current_model,
+            "available_models": all_models,
+            "providers": LLMProviderFactory.get_available_providers()
+        }
+    except Exception as e:
+        logger.error(f"모델 목록 조회 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/models/select")
+async def select_model(request: Dict):
+    """LLM 모델 선택"""
+    try:
+        provider = request.get("provider")
+        model_name = request.get("model_name")
+        temperature = request.get("temperature", 0.7)
+        max_tokens = request.get("max_tokens", 2000)
+        
+        if not provider or not model_name:
+            raise HTTPException(status_code=400, detail="provider와 model_name은 필수입니다")
+        
+        # 모델 설정 업데이트
+        config = ModelConfig(
+            provider=provider,
+            model_name=model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            streaming=True
+        )
+        
+        llm_manager.set_config(config)
+        
+        return {
+            "success": True,
+            "message": f"{provider} - {model_name} 모델이 선택되었습니다",
+            "current_model": llm_manager.get_model_info()
+        }
+    except Exception as e:
+        logger.error(f"모델 선택 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/models/api-key")
+async def update_api_key(request: Dict):
+    """API 키 업데이트"""
+    try:
+        provider = request.get("provider")
+        api_key = request.get("api_key")
+        
+        if not provider or not api_key:
+            raise HTTPException(status_code=400, detail="provider와 api_key는 필수입니다")
+        
+        # API 키 검증 및 업데이트
+        if llm_manager.update_api_key(provider, api_key):
+            return {
+                "success": True,
+                "message": f"{provider} API 키가 성공적으로 업데이트되었습니다"
+            }
+        else:
+            raise HTTPException(status_code=400, detail="유효하지 않은 API 키입니다")
+    except Exception as e:
+        logger.error(f"API 키 업데이트 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/models/test")
+async def test_current_model():
+    """현재 선택된 모델 테스트"""
+    try:
+        # 간단한 테스트 쿼리
+        llm = llm_manager.get_chat_model()
+        from langchain.schema import HumanMessage
+        
+        response = llm.invoke([HumanMessage(content="안녕하세요. 간단히 자기소개를 해주세요.")])
+        
+        return {
+            "success": True,
+            "model_info": llm_manager.get_model_info(),
+            "test_response": response.content[:200] + "..." if len(response.content) > 200 else response.content
+        }
+    except Exception as e:
+        logger.error(f"모델 테스트 오류: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn

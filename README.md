@@ -83,13 +83,26 @@ AI Nexus is a premium PDF analysis platform that transforms your documents into 
 The frontend is automatically deployed to GitHub Pages when you push to the main branch.
 
 ### Backend (Render.com)
-1. Fork this repository
-2. Create a new Web Service on Render.com
-3. Connect your GitHub repository
-4. Set environment variables in Render dashboard:
-   - `OPENAI_API_KEY`: Your OpenAI API key
-   - `ALLOWED_ORIGINS`: Your frontend URL
-5. Deploy!
+
+#### Automatic Deployment
+The backend is automatically deployed to Render when changes are pushed to the main branch.
+
+1. **Setup GitHub Secrets**:
+   - `RENDER_API_KEY`: Get from Render dashboard → Account Settings → API Keys
+   - `RENDER_SERVICE_ID`: Get from your Render service URL (srv-xxxxx)
+
+2. **Configure Render Service**:
+   - Use the provided `render.yaml` for automatic configuration
+   - Set environment variables in Render dashboard:
+     - `OPENAI_API_KEY`: Your OpenAI API key
+     - `ALLOWED_ORIGINS`: Your frontend URLs (comma-separated)
+     - `ENVIRONMENT`: production
+
+3. **Deployment Workflow**:
+   - Push changes to main/master branch
+   - GitHub Actions automatically triggers deployment
+   - Health check verifies deployment success
+   - API URL: https://rag-web-svc.onrender.com
 
 ## 📊 API Documentation
 

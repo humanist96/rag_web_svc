@@ -516,6 +516,7 @@
                 
                 <div class="action-buttons">
                     <button onclick="viewSession('${session.session_id}')">📋 상세보기</button>
+                    <button onclick="viewSessionLogs('${session.session_id}')">📜 활동 로그</button>
                     <button class="danger" onclick="deleteSession('${session.session_id}')">🗑️ 삭제</button>
                 </div>
             `;
@@ -625,6 +626,105 @@
         function viewSession(sessionId) {
             // 채팅 화면으로 이동
             window.location.href = `/index.html?session_id=${sessionId}`;
+        }
+        
+        // 세션 활동 로그 보기
+        async function viewSessionLogs(sessionId) {
+            try {
+                const response = await fetch(`${API_URL}/session/${sessionId}/logs`);
+                if (!response.ok) throw new Error('로그 로드 실패');
+                
+                const data = await response.json();
+                displaySessionLogs(sessionId, data.logs);
+            } catch (error) {
+                showAlert('세션 로그를 불러오는데 실패했습니다.', 'error');
+                console.error(error);
+            }
+        }
+        
+        // 세션 로그 표시
+        function displaySessionLogs(sessionId, logs) {
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 1000;
+            `;
+            
+            const content = document.createElement('div');
+            content.style.cssText = `
+                background: var(--bg-card);
+                border: 1px solid var(--border-primary);
+                border-radius: 16px;
+                padding: 30px;
+                max-width: 800px;
+                max-height: 80vh;
+                overflow-y: auto;
+                position: relative;
+            `;
+            
+            const closeBtn = document.createElement('button');
+            closeBtn.innerHTML = '✕';
+            closeBtn.style.cssText = `
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                background: none;
+                border: none;
+                color: var(--text-secondary);
+                font-size: 24px;
+                cursor: pointer;
+                padding: 5px 10px;
+            `;
+            closeBtn.onclick = () => modal.remove();
+            
+            let logsHTML = `
+                <h3 style="color: var(--primary-color); margin-bottom: 20px;">세션 활동 로그: ${sessionId}</h3>
+                <div class="logs-list">
+            `;
+            
+            if (logs.length === 0) {
+                logsHTML += '<p style="color: var(--text-tertiary);">활동 로그가 없습니다.</p>';
+            } else {
+                logs.forEach(log => {
+                    const time = new Date(log.timestamp).toLocaleString('ko-KR');
+                    logsHTML += `
+                        <div style="
+                            background: var(--bg-secondary);
+                            border-radius: 8px;
+                            padding: 15px;
+                            margin-bottom: 10px;
+                        ">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                                <strong style="color: var(--primary-light);">${log.action}</strong>
+                                <span style="color: var(--text-tertiary); font-size: 0.9rem;">${time}</span>
+                            </div>
+                            <div style="color: var(--text-secondary);">
+                                ${JSON.stringify(log.details, null, 2).replace(/\n/g, '<br>').replace(/ /g, '&nbsp;')}
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+            
+            logsHTML += '</div>';
+            
+            content.innerHTML = logsHTML;
+            content.appendChild(closeBtn);
+            modal.appendChild(content);
+            document.body.appendChild(modal);
+            
+            // 모달 외부 클릭 시 닫기
+            modal.onclick = (e) => {
+                if (e.target === modal) modal.remove();
+            };
         }
         
         // 자동 새로고침 (30초마다)

@@ -6,6 +6,60 @@ class AdvancedPromptTemplates:
     """고급 프롬프트 템플릿 모음"""
     
     @staticmethod
+    def get_qa_style_template(filename: str, file_type: str, metadata: dict = None) -> str:
+        """Q&A 스타일 간단명료한 답변 템플릿"""
+        
+        # 메타데이터 정보 구성
+        metadata_info = ""
+        if metadata:
+            if file_type == "pdf" and metadata.get("pages"):
+                metadata_info = f"\n- 문서 페이지 수: {metadata.get('pages', 'N/A')}"
+            elif file_type == "csv" and metadata.get("rows"):
+                metadata_info = f"\n- 데이터 행 수: {metadata.get('rows', 'N/A')}"
+                metadata_info += f"\n- 데이터 열 수: {metadata.get('columns', 'N/A')}"
+        
+        template = f"""You are a precise Q&A assistant analyzing the file '{filename}' ({file_type.upper()}).{metadata_info}
+
+## Your Response Style:
+1. **Direct Answer First**: Provide the exact answer in 1-2 sentences maximum
+2. **Clarity**: Use simple, clear language without unnecessary elaboration
+3. **Precision**: Be specific with numbers, dates, names, and facts
+4. **Structure**: If supplementary explanation is needed, clearly separate it
+
+## Response Format:
+[Direct Answer - 1-2 sentences only]
+
+[If additional context is helpful, add after blank line:]
+**부연설명:**
+[Additional details, examples, or context]
+
+## Answer Guidelines by Question Type:
+- **What/무엇**: Define or identify in one clear sentence
+- **Yes/No**: Start with 네/아니오, then one sentence explanation
+- **How many/얼마나**: State the number first, then brief context
+- **When/언제**: Give the specific date/time first
+- **Why/왜**: State the main reason in one sentence
+- **How/어떻게**: List steps briefly or describe process concisely
+
+## Important Rules:
+- NEVER start with phrases like "문서에 따르면" or "자료를 보면"
+- Get straight to the answer
+- Use **bold** for key information (numbers, dates, names)
+- If the answer isn't in the document, say "문서에 해당 정보가 없습니다"
+
+Context from document:
+{{context}}
+
+Chat History:
+{{chat_history}}
+
+User Question: {{question}}
+
+Answer (Remember: Direct answer first, supplementary info only if necessary):"""
+        
+        return template
+    
+    @staticmethod
     def get_enhanced_base_template(filename: str, file_type: str, metadata: dict = None) -> str:
         """향상된 기본 프롬프트 템플릿"""
         
@@ -36,6 +90,7 @@ class AdvancedPromptTemplates:
    - Cite specific sections or data points when making assertions
    - Clearly distinguish between facts and interpretations
    - Use phrases like "According to page X..." or "The data shows..."
+   - IMPORTANT: If the question is unrelated to the document content, politely decline to answer and suggest asking about the document instead
 
 2. **Comprehensive Analysis**
    - Address ALL aspects of the question thoroughly
@@ -67,7 +122,10 @@ class AdvancedPromptTemplates:
 - **Direct Questions**: Provide clear, concise answers first, then elaborate
 - **Complex Questions**: Break down into components and address systematically
 - **Ambiguous Questions**: Clarify possible interpretations and answer each
-- **Out-of-scope Questions**: Explain limitations and suggest available alternatives
+- **Out-of-scope Questions**: Politely decline if unrelated to the document. Say something like:
+  - "이 질문은 업로드된 문서와 관련이 없는 것 같습니다. 문서 내용에 대해 궁금하신 점을 물어봐 주세요."
+  - "제가 답변드릴 수 있는 범위는 업로드하신 문서의 내용입니다. 문서와 관련된 질문을 해주세요."
+  - Never provide general knowledge answers unrelated to the document
 
 ### For Analysis Requests:
 - **Data Analysis**: Present findings with statistics, trends, and visualizations

@@ -5,6 +5,7 @@ const API_URL = window.APP_CONFIG ? window.APP_CONFIG.API_URL : 'http://localhos
 let currentSessionId = null;
 let currentPdfName = null;
 let messageCount = 0;
+let currentModelInfo = null;
 
 console.log('API URL:', API_URL);
 
@@ -128,6 +129,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initialize analytics charts
     initializeAnalytics();
+    
+    // Initialize model status
+    updateModelStatus();
 });
 
 // Navigation
@@ -253,6 +257,31 @@ function validateFile(file) {
 
 // File Upload Handler
 async function handleFileUpload(file) {
+    // Check if embedding selector is available
+    if (typeof embeddingSelector !== 'undefined' && embeddingSelector) {
+        // Show model selection UI before upload
+        const fileInfo = {
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            lastModified: file.lastModified
+        };
+        
+        // Show embedding model selector
+        embeddingSelector.show(fileInfo, async (selection) => {
+            await proceedWithUpload(file, selection);
+        });
+        
+        // Show recommendations
+        embeddingSelector.showRecommendations(fileInfo);
+    } else {
+        // Fallback to direct upload if model selector is not available
+        console.log('Model selector not available, proceeding with direct upload');
+        await proceedWithUpload(file, null);
+    }
+}
+
+async function proceedWithUpload(file, modelSelection) {
     const uploadContent = document.getElementById('upload-content');
     const uploadProgress = document.getElementById('upload-progress');
     const uploadSuccess = document.getElementById('upload-success');
@@ -265,13 +294,30 @@ async function handleFileUpload(file) {
     uploadContent.style.display = 'none';
     uploadProgress.style.display = 'block';
     progressFilename.textContent = file.name;
-    progressStatus.textContent = 'Uploading...';
+    progressStatus.textContent = 'Uploading with selected models...';
+    
+    // Store model selection globally
+    window.selectedModels = modelSelection;
     
     // Create form data
     const formData = new FormData();
     formData.append('file', file);
     if (currentSessionId) {
         formData.append('session_id', currentSessionId);
+    }
+    
+    // Add model selection to form data if available
+    if (modelSelection) {
+        formData.append('embedding_model', modelSelection.embedding.key);
+        formData.append('llm_model', modelSelection.llm.key);
+        formData.append('model_config', JSON.stringify({
+            embedding: modelSelection.embedding.model,
+            llm: modelSelection.llm.model
+        }));
+    } else {
+        // Default model selection for backward compatibility
+        formData.append('embedding_model', 'default');
+        formData.append('llm_model', 'default');
     }
     
     // Simulate progress (since we can't track real upload progress with fetch)
@@ -310,13 +356,29 @@ async function handleFileUpload(file) {
         if (!response.ok) {
             const errorText = await response.text();
             console.error('Upload error response:', errorText);
+            console.error('Response status:', response.status);
+            console.error('Response statusText:', response.statusText);
+            
             let errorMessage = 'Upload failed';
-            try {
-                const errorData = JSON.parse(errorText);
-                errorMessage = errorData.detail || errorMessage;
-            } catch (e) {
-                errorMessage = `Upload failed: ${response.status} ${response.statusText}`;
+            
+            // Handle different error types
+            if (response.status === 404) {
+                errorMessage = 'Backend service not available. Please try again later.';
+            } else if (response.status === 413) {
+                errorMessage = 'File too large. Please choose a smaller file.';
+            } else if (response.status === 415) {
+                errorMessage = 'Unsupported file type. Please upload PDF or CSV files only.';
+            } else if (response.status >= 500) {
+                errorMessage = 'Server error. Please try again later.';
+            } else {
+                try {
+                    const errorData = JSON.parse(errorText);
+                    errorMessage = errorData.detail || errorData.message || errorMessage;
+                } catch (e) {
+                    errorMessage = `Upload failed: ${response.status} ${response.statusText}`;
+                }
             }
+            
             throw new Error(errorMessage);
         }
         
@@ -351,6 +413,11 @@ async function handleFileUpload(file) {
             // 로더 정보 표시 (PDF인 경우)
             if (result.loader_used) {
                 infoText += ` • ${result.loader_used}`;
+            }
+            
+            // 모델 정보 추가
+            if (modelSelection) {
+                infoText += ` • Embedding: ${modelSelection.embedding.model.name} • LLM: ${modelSelection.llm.model.name}`;
             }
             
             document.getElementById('success-info').textContent = infoText;
@@ -461,7 +528,13 @@ function enableChat() {
     chatInput.disabled = false;
     sendButton.disabled = false;
     chatInput.placeholder = 'Type your question...';
-    chatFilename.textContent = currentPdfName || 'No document loaded';
+    
+    // Update filename with model info
+    let filenameText = currentPdfName || 'No document loaded';
+    if (window.selectedModels) {
+        filenameText += ` (${window.selectedModels.llm.model.name})`;
+    }
+    chatFilename.textContent = filenameText;
 }
 
 function disableChat() {
@@ -1244,6 +1317,74 @@ function updateResponseChart(analyticsData) {
     responseChart.update();
 }
 
+// Model Status Functions
+async function updateModelStatus() {
+    try {
+        const response = await fetch(`${API_URL}/models`);
+        if (response.ok) {
+            const data = await response.json();
+            currentModelInfo = data.current_model;
+            displayModelStatus();
+        }
+    } catch (error) {
+        console.error('Error fetching model status:', error);
+    }
+}
+
+function displayModelStatus() {
+    if (!currentModelInfo) return;
+    
+    // Check if model status element exists, if not create it
+    let modelStatusElement = document.getElementById('model-status');
+    if (!modelStatusElement) {
+        // Create model status element in nav actions
+        const navActions = document.querySelector('.nav-actions');
+        if (navActions) {
+            const modelStatusDiv = document.createElement('div');
+            modelStatusDiv.className = 'model-status';
+            modelStatusDiv.id = 'model-status';
+            modelStatusDiv.innerHTML = `
+                <i class="fas fa-robot"></i>
+                <span class="model-info">
+                    <span class="model-provider"></span>
+                    <span class="model-name"></span>
+                </span>
+            `;
+            
+            // Insert before status indicator
+            const statusIndicator = navActions.querySelector('.status-indicator');
+            navActions.insertBefore(modelStatusDiv, statusIndicator);
+        }
+    }
+    
+    // Update model info
+    const modelProvider = document.querySelector('.model-provider');
+    const modelName = document.querySelector('.model-name');
+    
+    if (modelProvider && modelName) {
+        modelProvider.textContent = currentModelInfo.provider === 'openai' ? 'OpenAI' : 'Claude';
+        modelName.textContent = getShortModelName(currentModelInfo.model);
+    }
+}
+
+function getShortModelName(modelId) {
+    const shortNames = {
+        'gpt-3.5-turbo': 'GPT-3.5',
+        'gpt-3.5-turbo-16k': 'GPT-3.5 16K',
+        'gpt-4': 'GPT-4',
+        'gpt-4-turbo-preview': 'GPT-4 Turbo',
+        'claude-3-opus-20240229': 'Opus',
+        'claude-3-sonnet-20240229': 'Sonnet',
+        'claude-3-haiku-20240307': 'Haiku',
+        'claude-2.1': 'Claude 2.1',
+        'claude-instant-1.2': 'Instant'
+    };
+    return shortNames[modelId] || modelId;
+}
+
+// Update model status periodically
+setInterval(updateModelStatus, 30000); // Every 30 seconds
+
 // Make functions global
 window.startChat = startChat;
 window.resetUpload = resetUpload;
@@ -1258,3 +1399,4 @@ window.newSession = newSession;
 window.showHelp = showHelp;
 window.toggleVoiceInput = toggleVoiceInput;
 window.attachFile = attachFile;
+window.updateModelStatus = updateModelStatus;

@@ -157,7 +157,19 @@ class EnhancedChatUI {
                         
                         try {
                             const parsed = JSON.parse(data);
-                            this.updateStreamingMessage(parsed.content);
+                            if (parsed.type === 'error') {
+                                console.error('Streaming error:', parsed.error);
+                                this.finalizeStreamingMessage();
+                                this.addMessage('error', parsed.error);
+                                return;
+                            } else if (parsed.content) {
+                                this.updateStreamingMessage(parsed.content);
+                            }
+                            
+                            // Store metadata if available
+                            if (parsed.metadata) {
+                                this.currentStreamMetadata = parsed.metadata;
+                            }
                         } catch (e) {
                             console.error('Parse error:', e);
                         }
@@ -172,15 +184,31 @@ class EnhancedChatUI {
     handleNormalResponse(data) {
         this.hideTypingIndicator();
         
-        // Add AI response with enhanced formatting
-        const formattedAnswer = this.formatResponse(data.answer);
-        this.addMessage('assistant', formattedAnswer, data.sources);
+        // Check if it's an off-topic response
+        if (data.is_off_topic) {
+            // Add warning-style message
+            this.addMessage('assistant', data.answer, null, 'off-topic');
+            
+            // Show suggestions if available
+            if (data.suggestions && data.suggestions.length > 0) {
+                this.displaySuggestions(data.suggestions);
+            }
+            
+            // Add relevance score info
+            if (data.relevance_score !== undefined) {
+                console.log(`Relevance score: ${data.relevance_score.toFixed(3)}`);
+            }
+        } else {
+            // Add AI response with enhanced formatting
+            const formattedAnswer = this.formatResponse(data.answer);
+            this.addMessage('assistant', formattedAnswer, data.sources);
+            
+            // Generate follow-up suggestions
+            this.generateFollowUpSuggestions(data.answer);
+        }
         
         // Save to chat history
         this.saveChatHistory();
-        
-        // Generate follow-up suggestions
-        this.generateFollowUpSuggestions(data.answer);
     }
 
     createStreamingMessage() {
@@ -209,6 +237,21 @@ class EnhancedChatUI {
         
         const textElement = this.streamingMessage.querySelector('.message-text');
         textElement.innerHTML = this.formatResponse(content);
+        
+        // Update model indicator if metadata available
+        if (this.currentStreamMetadata) {
+            const modelIndicator = this.streamingMessage.querySelector('.model-indicator');
+            if (!modelIndicator) {
+                const indicator = document.createElement('div');
+                indicator.className = 'model-indicator';
+                indicator.innerHTML = `
+                    <i class="fas fa-robot"></i>
+                    <span>${this.currentStreamMetadata.provider || ''} ${this.currentStreamMetadata.model || ''}</span>
+                `;
+                this.streamingMessage.querySelector('.message-content').appendChild(indicator);
+            }
+        }
+        
         this.scrollToBottom();
     }
 
@@ -223,9 +266,9 @@ class EnhancedChatUI {
         this.generateFollowUpSuggestions();
     }
 
-    addMessage(type, content, sources = null) {
+    addMessage(type, content, sources = null, extraClass = '') {
         const messageDiv = document.createElement('div');
-        messageDiv.className = `message ${type}-message fade-in`;
+        messageDiv.className = `message ${type}-message fade-in ${extraClass}`;
         
         const timestamp = new Date().toLocaleTimeString('ko-KR', { 
             hour: '2-digit', 
@@ -289,21 +332,53 @@ class EnhancedChatUI {
     renderSources(sources) {
         if (!sources || sources.length === 0) return '';
         
+        // 소스가 실제로 의미 있는 내용을 포함하는지 확인
+        const hasValidSources = sources.some(source => 
+            source.content && source.content.trim().length > 10
+        );
+        
+        if (!hasValidSources) return '';
+        
+        // 고유 ID 생성
+        const sourceId = `sources-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        
         return `
-            <div class="message-sources">
-                <div class="sources-header">
-                    <i class="fas fa-link"></i> 참조 문서
+            <div class="message-sources collapsed" id="${sourceId}">
+                <div class="sources-header" onclick="enhancedChat.toggleSources('${sourceId}')">
+                    <i class="fas fa-book-open"></i>
+                    <span class="sources-title">참조 문서 ${sources.length}개</span>
+                    <i class="fas fa-chevron-down toggle-icon"></i>
                 </div>
-                <div class="sources-list">
-                    ${sources.map((source, index) => `
-                        <div class="source-item">
-                            <div class="source-number">${index + 1}</div>
-                            <div class="source-content">
-                                <div class="source-text">${this.truncateText(source.content, 100)}</div>
-                                ${source.metadata.page ? `<div class="source-page">페이지 ${source.metadata.page}</div>` : ''}
+                <div class="sources-content">
+                    <div class="sources-compact">
+                        ${sources.map((source, index) => `
+                            <span class="source-badge" onclick="enhancedChat.showSourceDetail('${sourceId}', ${index})">
+                                <i class="fas fa-file-alt"></i>
+                                ${source.metadata.page ? `페이지 ${source.metadata.page}` : `참조 ${index + 1}`}
+                            </span>
+                        `).join('')}
+                    </div>
+                    <div class="sources-detail" style="display: none;">
+                        ${sources.map((source, index) => `
+                            <div class="source-detail-item" id="${sourceId}-detail-${index}" style="display: none;">
+                                <div class="source-detail-header">
+                                    <span class="source-detail-number">${index + 1}</span>
+                                    ${source.metadata.page ? `<span class="source-detail-page">페이지 ${source.metadata.page}</span>` : ''}
+                                    <div class="source-detail-actions">
+                                        <button class="copy-source" onclick="enhancedChat.copySource('${sourceId}', ${index})" title="복사">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                        <button class="close-detail" onclick="enhancedChat.hideSourceDetail('${sourceId}')" title="닫기">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="source-detail-content" id="${sourceId}-content-${index}">
+                                    ${source.content}
+                                </div>
                             </div>
-                        </div>
-                    `).join('')}
+                        `).join('')}
+                    </div>
                 </div>
             </div>
         `;
@@ -319,6 +394,18 @@ class EnhancedChatUI {
                 return '<div class="code-block"><button class="copy-code-btn" onclick="enhancedChat.copyCode(this)"><i class="fas fa-copy"></i></button><pre><code';
             });
             formatted = formatted.replace(/<\/code><\/pre>/g, '</code></pre></div>');
+            
+            // 부연설명 섹션 스타일링
+            formatted = formatted.replace(
+                /<p><strong>부연설명:<\/strong>/g, 
+                '<div class="supplementary-section"><p class="supplementary-header"><strong>부연설명:</strong></p><div class="supplementary-content">'
+            );
+            
+            // 부연설명 섹션 닫기 (다음 섹션이나 끝까지)
+            if (formatted.includes('supplementary-section')) {
+                // 마지막에 div 닫기 태그 추가
+                formatted = formatted.replace(/(<\/p>)$/, '$1</div></div>');
+            }
             
             return formatted;
         }
@@ -521,6 +608,73 @@ class EnhancedChatUI {
         };
 
         recognition.start();
+    }
+
+    toggleSources(sourceId) {
+        const sourceElement = document.getElementById(sourceId);
+        if (!sourceElement) return;
+        
+        sourceElement.classList.toggle('collapsed');
+        const icon = sourceElement.querySelector('.toggle-icon');
+        if (icon) {
+            icon.classList.toggle('fa-chevron-down');
+            icon.classList.toggle('fa-chevron-up');
+        }
+    }
+
+    showSourceDetail(sourceId, index) {
+        const sourceElement = document.getElementById(sourceId);
+        if (!sourceElement) return;
+        
+        // Hide compact view and show detail view
+        const compactView = sourceElement.querySelector('.sources-compact');
+        const detailView = sourceElement.querySelector('.sources-detail');
+        
+        if (compactView) compactView.style.display = 'none';
+        if (detailView) detailView.style.display = 'block';
+        
+        // Hide all detail items first
+        const allDetails = sourceElement.querySelectorAll('.source-detail-item');
+        allDetails.forEach(detail => detail.style.display = 'none');
+        
+        // Show selected detail
+        const selectedDetail = document.getElementById(`${sourceId}-detail-${index}`);
+        if (selectedDetail) {
+            selectedDetail.style.display = 'block';
+        }
+    }
+
+    hideSourceDetail(sourceId) {
+        const sourceElement = document.getElementById(sourceId);
+        if (!sourceElement) return;
+        
+        // Show compact view and hide detail view
+        const compactView = sourceElement.querySelector('.sources-compact');
+        const detailView = sourceElement.querySelector('.sources-detail');
+        
+        if (compactView) compactView.style.display = 'flex';
+        if (detailView) detailView.style.display = 'none';
+    }
+
+    copySource(sourceId, index) {
+        const contentElement = document.getElementById(`${sourceId}-content-${index}`);
+        if (!contentElement) return;
+        
+        const text = contentElement.innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            this.showToast('참조 내용이 복사되었습니다');
+            
+            // Change icon temporarily
+            const copyBtn = contentElement.parentElement.querySelector('.copy-source i');
+            if (copyBtn) {
+                copyBtn.className = 'fas fa-check';
+                setTimeout(() => {
+                    copyBtn.className = 'fas fa-copy';
+                }, 2000);
+            }
+        }).catch(() => {
+            this.showToast('복사하는 중 오류가 발생했습니다');
+        });
     }
 }
 

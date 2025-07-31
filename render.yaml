@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: rag-web-svc
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements.txt
+    startCommand: |
+      python enhanced_rag_chatbot.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: IS_PRODUCTION
+        value: true
+      - key: ALLOWED_ORIGINS
+        value: "https://humanist96.github.io,https://rag-web-svc.vercel.app,https://rag-web-svc-humanist96s-projects.vercel.app"
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        value: 10000
+    autoDeploy: true
+    domains:
+      - rag-web-svc.onrender.com
