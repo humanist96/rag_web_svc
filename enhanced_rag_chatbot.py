@@ -36,6 +36,11 @@ from langchain.schema import Document
 import pandas as pd
 import csv
 import json
+import PyPDF2
+import pdfplumber
+from typing import Tuple
+import tempfile
+import subprocess
 
 # Load environment variables
 load_dotenv()
@@ -184,26 +189,163 @@ class SessionManager:
         if sessions_to_delete:
             logger.info(f"Cleaned up {len(sessions_to_delete)} old sessions")
     
+    def extract_pdf_metadata(self, file_path: str) -> Dict:
+        """PDF 메타데이터 추출"""
+        metadata = {}
+        try:
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                metadata['pages'] = len(pdf_reader.pages)
+                metadata['encrypted'] = pdf_reader.is_encrypted
+                
+                if pdf_reader.metadata:
+                    metadata['title'] = pdf_reader.metadata.get('/Title', '')
+                    metadata['author'] = pdf_reader.metadata.get('/Author', '')
+                    metadata['subject'] = pdf_reader.metadata.get('/Subject', '')
+                    metadata['creator'] = pdf_reader.metadata.get('/Creator', '')
+                    metadata['creation_date'] = str(pdf_reader.metadata.get('/CreationDate', ''))
+                    metadata['modification_date'] = str(pdf_reader.metadata.get('/ModDate', ''))
+        except Exception as e:
+            logger.warning(f"메타데이터 추출 실패: {str(e)}")
+        
+        return metadata
+    
+    def try_multiple_pdf_loaders(self, file_path: str, filename: str) -> Tuple[List[Document], str]:
+        """여러 PDF 로더를 시도하여 가장 좋은 결과 반환"""
+        documents = []
+        loader_used = ""
+        
+        # 1. 먼저 PyPDFLoader 시도 (가장 일반적)
+        try:
+            loader = PyPDFLoader(file_path)
+            documents = loader.load()
+            if documents and any(doc.page_content.strip() for doc in documents):
+                logger.info(f"PyPDFLoader로 성공적으로 로드")
+                loader_used = "PyPDFLoader"
+                return documents, loader_used
+        except Exception as e:
+            logger.warning(f"PyPDFLoader 실패: {str(e)}")
+        
+        # 2. pdfplumber 시도 (표와 복잡한 레이아웃에 좋음)
+        try:
+            documents = []
+            with pdfplumber.open(file_path) as pdf:
+                for page_num, page in enumerate(pdf.pages):
+                    text = page.extract_text() or ""
+                    tables = page.extract_tables()
+                    
+                    # 표 데이터를 텍스트로 변환
+                    if tables:
+                        for table in tables:
+                            table_text = "\n"
+                            for row in table:
+                                table_text += " | ".join(str(cell) if cell else "" for cell in row) + "\n"
+                            text += table_text
+                    
+                    if text.strip():
+                        doc = Document(
+                            page_content=text,
+                            metadata={
+                                "source": filename,
+                                "page": page_num,
+                                "loader": "pdfplumber"
+                            }
+                        )
+                        documents.append(doc)
+            
+            if documents:
+                logger.info(f"pdfplumber로 성공적으로 로드")
+                loader_used = "pdfplumber"
+                return documents, loader_used
+        except Exception as e:
+            logger.warning(f"pdfplumber 실패: {str(e)}")
+        
+        # 3. PyPDF2 직접 사용 (기본 텍스트 추출)
+        try:
+            documents = []
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                for page_num in range(len(pdf_reader.pages)):
+                    page = pdf_reader.pages[page_num]
+                    text = page.extract_text()
+                    if text.strip():
+                        doc = Document(
+                            page_content=text,
+                            metadata={
+                                "source": filename,
+                                "page": page_num,
+                                "loader": "PyPDF2"
+                            }
+                        )
+                        documents.append(doc)
+            
+            if documents:
+                logger.info(f"PyPDF2로 성공적으로 로드")
+                loader_used = "PyPDF2"
+                return documents, loader_used
+        except Exception as e:
+            logger.warning(f"PyPDF2 실패: {str(e)}")
+        
+        # 모든 방법이 실패한 경우
+        if not documents:
+            raise Exception("모든 PDF 로더가 실패했습니다. 파일이 손상되었거나 스캔된 이미지 PDF일 수 있습니다.")
+        
+        return documents, loader_used
+
     async def process_pdf(self, session_id: str, file_path: str, filename: str) -> Dict:
         """PDF 파일 처리 및 벡터스토어 생성"""
         try:
-            # PDF 로드
-            loader = PyPDFLoader(file_path)
-            documents = loader.load()
-            logger.info(f"PDF 로드 완료: {filename}, 페이지 수: {len(documents)}")
+            # PDF 메타데이터 추출
+            metadata = self.extract_pdf_metadata(file_path)
+            logger.info(f"PDF 메타데이터: {metadata}")
+            
+            # 암호화된 PDF 확인
+            if metadata.get('encrypted', False):
+                raise HTTPException(
+                    status_code=400, 
+                    detail="암호로 보호된 PDF 파일입니다. 암호를 해제한 후 업로드해주세요."
+                )
+            
+            # 여러 로더로 PDF 로드 시도
+            documents, loader_used = self.try_multiple_pdf_loaders(file_path, filename)
+            
+            if not documents:
+                raise HTTPException(
+                    status_code=400,
+                    detail="PDF 파일에서 텍스트를 추출할 수 없습니다. 스캔된 이미지 PDF인 경우 OCR 처리가 필요합니다."
+                )
+            
+            logger.info(f"PDF 로드 완료: {filename}, 페이지 수: {len(documents)}, 사용된 로더: {loader_used}")
+            
+            # 문서가 너무 짧은 경우 청크 크기 조정
+            avg_doc_length = sum(len(doc.page_content) for doc in documents) / len(documents)
+            if avg_doc_length < 500:
+                # 짧은 문서는 더 작은 청크로 분할
+                text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=200,
+                    chunk_overlap=50
+                )
+            else:
+                text_splitter = self.text_splitter
             
             # 문서 분할
-            chunks = self.text_splitter.split_documents(documents)
+            chunks = text_splitter.split_documents(documents)
             
             # 메타데이터 추가
             for i, chunk in enumerate(chunks):
                 chunk.metadata.update({
                     'chunk_id': i,
                     'source_file': filename,
-                    'upload_time': datetime.now().isoformat()
+                    'upload_time': datetime.now().isoformat(),
+                    'loader_used': loader_used,
+                    'pdf_metadata': metadata
                 })
             
             logger.info(f"청크 생성 완료: {len(chunks)}개")
+            
+            # 청크가 너무 적은 경우 경고
+            if len(chunks) < 3:
+                logger.warning(f"생성된 청크가 매우 적습니다 ({len(chunks)}개). PDF 내용이 제한적일 수 있습니다.")
             
             # 벡터스토어 생성
             vectorstore = FAISS.from_documents(
@@ -250,13 +392,33 @@ class SessionManager:
             return {
                 "status": "success",
                 "filename": filename,
+                "file_type": "pdf",
                 "pages": len(documents),
-                "chunks": len(chunks)
+                "chunks": len(chunks),
+                "loader_used": loader_used,
+                "metadata": metadata
             }
             
+        except HTTPException:
+            raise  # HTTPException은 그대로 전달
         except Exception as e:
             logger.error(f"PDF 처리 중 오류: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"PDF 처리 실패: {str(e)}")
+            
+            # 사용자 친화적인 에러 메시지
+            error_message = "PDF 처리 중 오류가 발생했습니다. "
+            
+            if "decrypt" in str(e).lower() or "encrypt" in str(e).lower():
+                error_message = "암호로 보호된 PDF 파일입니다. 암호를 해제 후 업로드해주세요."
+            elif "codec" in str(e).lower() or "decode" in str(e).lower():
+                error_message = "PDF 파일의 인코딩 문제가 발생했습니다. 다른 PDF 뷰어에서 열어서 다시 저장 후 업로드해보세요."
+            elif "eof" in str(e).lower() or "corrupt" in str(e).lower():
+                error_message = "PDF 파일이 손상되었거나 불완전합니다. 파일을 확인해주세요."
+            elif "image" in str(e).lower() or "scan" in str(e).lower():
+                error_message = "스캔된 이미지 PDF로 보입니다. 텍스트가 포함된 PDF를 업로드해주세요."
+            else:
+                error_message += "파일을 확인하고 다시 시도해주세요."
+                
+            raise HTTPException(status_code=500, detail=error_message)
     
     async def process_csv(self, session_id: str, file_path: str, filename: str) -> Dict:
         """CSV 파일 처리 및 벡터스토어 생성"""

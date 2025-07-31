@@ -341,8 +341,18 @@ async function handleFileUpload(file) {
                 infoText += `${result.rows} rows • ${result.columns} columns • `;
             } else {
                 infoText += `${result.pages} pages • `;
+                // PDF 메타데이터 표시 (있는 경우)
+                if (result.metadata && result.metadata.title) {
+                    infoText += `"${result.metadata.title}" • `;
+                }
             }
             infoText += `${result.chunks} chunks`;
+            
+            // 로더 정보 표시 (PDF인 경우)
+            if (result.loader_used) {
+                infoText += ` • ${result.loader_used}`;
+            }
+            
             document.getElementById('success-info').textContent = infoText;
             
             // Update stats
