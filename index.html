@@ -24,12 +24,20 @@
     
     <!-- Custom Styles -->
     <link rel="stylesheet" href="premium_styles.css">
+    <link rel="stylesheet" href="enhanced_chat_styles.css">
     
     <!-- Configuration -->
     <script src="config.js"></script>
     
     <!-- Theme Manager -->
     <script src="theme.js"></script>
+    
+    <!-- Code Highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    
+    <!-- Markdown Parser -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     
     <!-- Theme Color Meta -->
     <meta name="theme-color" content="#0a0a0a">
@@ -200,16 +208,19 @@
             
             <div class="chat-container glass">
                 <div class="chat-header">
-                    <div class="chat-info">
-                        <i class="fas fa-file-pdf"></i>
-                        <span class="chat-filename" id="chat-filename">No document loaded</span>
+                    <div class="chat-header-info">
+                        <h3>AI Assistant</h3>
+                        <p id="chat-filename">No document loaded</p>
                     </div>
-                    <div class="chat-actions">
-                        <button class="chat-action" onclick="clearChat()">
+                    <div class="chat-header-actions">
+                        <button onclick="clearChat()" title="채팅 기록 삭제">
                             <i class="fas fa-broom"></i>
                         </button>
-                        <button class="chat-action" onclick="exportChat()">
+                        <button onclick="exportChat()" title="대화 내보내기">
                             <i class="fas fa-download"></i>
+                        </button>
+                        <button onclick="toggleChatSettings()" title="설정">
+                            <i class="fas fa-cog"></i>
                         </button>
                     </div>
                 </div>
@@ -232,10 +243,13 @@
                             disabled
                         ></textarea>
                         <div class="chat-input-actions">
-                            <button class="input-action" onclick="toggleVoiceInput()">
+                            <button class="input-action voice-input-btn" onclick="enhancedChat.startVoiceInput()" title="음성 입력">
                                 <i class="fas fa-microphone"></i>
                             </button>
-                            <button class="btn btn-primary btn-send" id="send-button" onclick="sendMessage()" disabled>
+                            <button class="input-action" onclick="enhancedChat.showSuggestions()" title="추천 질문">
+                                <i class="fas fa-lightbulb"></i>
+                            </button>
+                            <button class="btn btn-primary btn-send" id="send-button" onclick="enhancedChat.sendMessage()" disabled>
                                 <i class="fas fa-paper-plane"></i>
                             </button>
                         </div>
@@ -327,5 +341,6 @@
 
     <!-- Scripts -->
     <script src="premium_script.js"></script>
+    <script src="enhanced_chat_ui.js"></script>
 </body>
 </html>

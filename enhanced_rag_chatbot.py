@@ -11,6 +11,8 @@ import uuid
 import time
 import re
 from collections import Counter
+import asyncio
+import json
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,6 +43,14 @@ import pdfplumber
 from typing import Tuple
 import tempfile
 import subprocess
+
+# Import advanced AI prompts
+try:
+    from advanced_ai_prompts import AdvancedPromptTemplates, PromptOptimizer, ResponseFormatter
+except ImportError:
+    AdvancedPromptTemplates = None
+    PromptOptimizer = None
+    ResponseFormatter = None
 
 # Load environment variables
 load_dotenv()
@@ -88,6 +98,7 @@ SESSION_EXPIRE_HOURS = 24  # 세션 만료 시간
 class ChatRequest(BaseModel):
     message: str = Field(..., description="사용자 메시지")
     session_id: str = Field(..., description="세션 ID")
+    options: Optional[Dict] = Field(default={}, description="추가 옵션")
 
 class ChatResponse(BaseModel):
     answer: str = Field(..., description="챗봇 응답")
@@ -154,11 +165,13 @@ class SessionManager:
     def __init__(self):
         self.sessions = {}
         self.embeddings = OpenAIEmbeddings()
+        # 최적화된 텍스트 분할 설정
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=200,
+            chunk_size=800,  # 더 작은 청크로 정확도 향상
+            chunk_overlap=150,  # 적절한 오버랩
             separators=["\n\n", "\n", ".", "!", "?", ",", " ", ""],
-            length_function=len
+            length_function=len,
+            is_separator_regex=False
         )
     
     def create_session(self, session_id: str = None) -> str:
@@ -361,8 +374,9 @@ class SessionManager:
             if avg_doc_length < 500:
                 # 짧은 문서는 더 작은 청크로 분할
                 text_splitter = RecursiveCharacterTextSplitter(
-                    chunk_size=200,
-                    chunk_overlap=50
+                    chunk_size=300,
+                    chunk_overlap=75,
+                    separators=["\n\n", "\n", ".", " ", ""]
                 )
             else:
                 text_splitter = self.text_splitter
@@ -392,11 +406,12 @@ class SessionManager:
                 embedding=self.embeddings
             )
             
-            # QA 체인 생성
+            # QA 체인 생성 - 향상된 설정
             llm = ChatOpenAI(
-                temperature=0.7,
-                model_name="gpt-3.5-turbo",
-                streaming=False
+                temperature=0.5,  # 더 일관된 응답을 위해 약간 낮춤
+                model_name="gpt-3.5-turbo-16k",  # 더 긴 컨텍스트 처리
+                streaming=True,  # 스트리밍 응답 활성화
+                max_tokens=2000  # 충분한 응답 길이
             )
             
             # 향상된 PDF 프롬프트 템플릿
@@ -657,11 +672,12 @@ class SessionManager:
 
 답변:"""
             
-            # QA 체인 생성
+            # QA 체인 생성 - CSV용 향상된 설정
             llm = ChatOpenAI(
-                temperature=0.3,  # CSV 데이터는 더 정확한 답변을 위해 낮은 temperature
-                model_name="gpt-3.5-turbo",
-                streaming=False
+                temperature=0.2,  # CSV 데이터는 더 정확한 답변을 위해 더 낮은 temperature
+                model_name="gpt-3.5-turbo-16k",  # 대용량 데이터 처리
+                streaming=True,
+                max_tokens=2000
             )
             
             PROMPT = PromptTemplate(
@@ -750,6 +766,13 @@ class SessionManager:
     
     def get_enhanced_prompt_template(self, filename: str, file_type: str, session_data: Dict) -> str:
         """파일 타입과 컨텍스트에 맞는 향상된 프롬프트 템플릿 생성"""
+        
+        # Use advanced prompt templates if available
+        if AdvancedPromptTemplates:
+            metadata = session_data.get('metadata', {})
+            return AdvancedPromptTemplates.get_enhanced_base_template(filename, file_type, metadata)
+        
+        # Fallback to original template
         base_template = f"""당신은 업로드된 파일 '{filename}'의 내용을 기반으로 답변하는 AI 전문가입니다.
 
 다음 지침을 따라 최상의 답변을 제공하세요:
@@ -797,7 +820,7 @@ class SessionManager:
         
         return base_template
     
-    def chat(self, session_id: str, message: str) -> Dict:
+    def chat(self, session_id: str, message: str, options: Dict = None) -> Dict:
         """채팅 응답 생성"""
         session = self.get_session(session_id)
         if not session:
@@ -807,6 +830,20 @@ class SessionManager:
             raise HTTPException(status_code=400, detail="먼저 파일(PDF 또는 CSV)을 업로드해주세요")
         
         try:
+            # 옵션 처리
+            options = options or {}
+            
+            # 질문 최적화
+            if PromptOptimizer:
+                enhanced_message = PromptOptimizer.enhance_question(message, session.get("file_type"))
+                enhanced_message = PromptOptimizer.add_context_hints(
+                    enhanced_message, 
+                    session.get("file_type"),
+                    session.get("metadata")
+                )
+            else:
+                enhanced_message = message
+            
             # 응답 시간 측정 시작
             start_time = time.time()
             
@@ -817,7 +854,7 @@ class SessionManager:
             
             # QA 체인 실행
             result = session["qa_chain"]({
-                "question": message,
+                "question": enhanced_message,
                 "chat_history": session["memory"].chat_memory.messages
             })
             
@@ -834,16 +871,27 @@ class SessionManager:
                         "metadata": doc.metadata
                     })
             
+            # 응답 포맷팅
+            if ResponseFormatter:
+                formatted_answer = ResponseFormatter.format_with_markdown(result["answer"])
+                formatted_answer = ResponseFormatter.add_visual_elements(formatted_answer, session.get("file_type"))
+            else:
+                formatted_answer = result["answer"]
+            
             # 메모리에 대화 저장
             session["memory"].chat_memory.add_user_message(message)
             session["memory"].chat_memory.add_ai_message(result["answer"])
             session["messages_count"] += 1
             
             return {
-                "answer": result["answer"],
+                "answer": formatted_answer,
                 "sources": sources,
                 "session_id": session_id,
-                "pdf_name": session["pdf_name"]
+                "pdf_name": session["pdf_name"],
+                "metadata": {
+                    "response_time": response_time,
+                    "enhanced_question": enhanced_message if options.get("show_enhanced") else None
+                }
             }
             
         except Exception as e:
@@ -1318,12 +1366,69 @@ async def chat_endpoint(request: ChatRequest):
     try:
         result = session_manager.chat(
             session_id=request.session_id,
-            message=request.message
+            message=request.message,
+            options=request.options
         )
         return ChatResponse(**result)
     except Exception as e:
         logger.error(f"채팅 처리 중 오류: {str(e)}")
         raise
+
+@app.post("/chat/stream")
+async def chat_stream_endpoint(request: ChatRequest):
+    """스트리밍 채팅 엔드포인트"""
+    from fastapi.responses import StreamingResponse
+    
+    async def generate():
+        try:
+            # 세션 확인
+            session = session_manager.get_session(request.session_id)
+            if not session:
+                yield f"data: {json.dumps({'error': '세션을 찾을 수 없습니다'})}\n\n"
+                return
+            
+            if not session["qa_chain"]:
+                yield f"data: {json.dumps({'error': '먼저 파일을 업로드해주세요'})}\n\n"
+                return
+            
+            # 스트리밍 응답 시뮬레이션
+            result = session_manager.chat(
+                session_id=request.session_id,
+                message=request.message,
+                options=request.options
+            )
+            
+            # 응답을 청크로 나누어 스트리밍
+            answer = result["answer"]
+            words = answer.split()
+            current_chunk = ""
+            
+            for i, word in enumerate(words):
+                current_chunk += word + " "
+                if i % 5 == 0:  # 5단어마다 전송
+                    yield f"data: {json.dumps({'content': current_chunk})}\n\n"
+                    await asyncio.sleep(0.05)  # 타이핑 효과
+            
+            # 남은 텍스트 전송
+            if current_chunk.strip():
+                yield f"data: {json.dumps({'content': current_chunk})}\n\n"
+            
+            # 완료 신호
+            yield f"data: [DONE]\n\n"
+            
+        except Exception as e:
+            logger.error(f"스트리밍 중 오류: {str(e)}")
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 @app.get("/sessions/{session_id}", response_model=SessionInfo)
 async def get_session_info(session_id: str):
