@@ -10,4 +10,5 @@ langchain-openai
 faiss-cpu
 pypdf
 tiktoken
+pandas
 aiofiles
