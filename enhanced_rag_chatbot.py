@@ -58,6 +58,12 @@ logger = logging.getLogger(__name__)
 
 # Global variables
 sessions = {}  # 세션별 벡터스토어 및 QA 체인 관리
+session_history = {}  # 세션별 업로드 파일 히스토리
+memory_usage = {  # 메모리 사용량 추적
+    "total_size_bytes": 0,
+    "session_sizes": {},
+    "last_cleanup": datetime.now()
+}
 analytics_data = {  # 분석 데이터 저장
     "total_uploads": 0,
     "total_queries": 0,
@@ -73,6 +79,10 @@ IS_PRODUCTION = os.getenv("RENDER", "false").lower() == "true"
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 ALLOWED_EXTENSIONS = {".pdf", ".csv"}
 MAX_SESSIONS = 100  # Limit sessions in production
+MAX_MEMORY_MB = 500  # 최대 메모리 사용량 (MB)
+SESSION_CLEANUP_INTERVAL = 3600  # 1시간마다 클린업
+MAX_FILES_PER_SESSION = 10  # 세션당 최대 파일 수
+SESSION_EXPIRE_HOURS = 24  # 세션 만료 시간
 
 # Request/Response models
 class ChatRequest(BaseModel):
@@ -98,6 +108,35 @@ class UploadResponse(BaseModel):
 class SessionInfo(BaseModel):
     session_id: str
     pdf_name: Optional[str]
+
+class FileHistory(BaseModel):
+    filename: str
+    file_type: str
+    upload_time: datetime
+    file_size: int
+    pages: Optional[int] = None
+    rows: Optional[int] = None
+    columns: Optional[int] = None
+    chunks: int
+    metadata: Optional[Dict] = None
+
+class SessionHistory(BaseModel):
+    session_id: str
+    created_at: datetime
+    last_accessed: datetime
+    files: List[FileHistory]
+    total_queries: int = 0
+    memory_size_mb: float = 0.0
+
+class MemoryManagementRequest(BaseModel):
+    action: str = Field(..., description="관리 작업: cleanup_old, cleanup_session, get_stats")
+    session_id: Optional[str] = Field(None, description="특정 세션 ID (선택사항)")
+    hours_old: Optional[int] = Field(24, description="정리할 세션 나이 (시간)")
+
+class SessionHistoryResponse(BaseModel):
+    sessions: List[SessionHistory]
+    total_memory_mb: float
+    active_sessions: int
     created_at: str
     messages_count: int
 
@@ -384,20 +423,28 @@ class SessionManager:
             session["vectorstore"] = vectorstore
             session["qa_chain"] = qa_chain
             session["pdf_name"] = filename
+            session["num_chunks"] = len(chunks)  # 메모리 추정을 위해 청크 수 저장
             
             # 메모리 초기화 (새 파일 업로드 시)
             session["memory"].clear()
             session["messages_count"] = 0
             
-            return {
+            # 결과 정보
+            result_info = {
                 "status": "success",
                 "filename": filename,
                 "file_type": "pdf",
                 "pages": len(documents),
                 "chunks": len(chunks),
                 "loader_used": loader_used,
-                "metadata": metadata
+                "metadata": metadata,
+                "file_size": os.path.getsize(file_path)
             }
+            
+            # 히스토리에 추가
+            self.add_file_to_history(session_id, result_info)
+            
+            return result_info
             
         except HTTPException:
             raise  # HTTPException은 그대로 전달
@@ -639,6 +686,7 @@ class SessionManager:
             session["qa_chain"] = qa_chain
             session["pdf_name"] = filename
             session["file_type"] = "csv"
+            session["num_chunks"] = len(chunks)  # 메모리 추정을 위해 청크 수 저장
             session["data_summary"] = {
                 "rows": len(df),
                 "columns": df.shape[1],
@@ -649,14 +697,21 @@ class SessionManager:
             session["memory"].clear()
             session["messages_count"] = 0
             
-            return {
+            # 결과 정보
+            result_info = {
                 "status": "success",
                 "filename": filename,
                 "file_type": "csv",
                 "rows": len(df),
                 "columns": df.shape[1],
-                "chunks": len(chunks)
+                "chunks": len(chunks),
+                "file_size": os.path.getsize(file_path)
             }
+            
+            # 히스토리에 추가
+            self.add_file_to_history(session_id, result_info)
+            
+            return result_info
             
         except pd.errors.EmptyDataError:
             raise HTTPException(
@@ -755,6 +810,11 @@ class SessionManager:
             # 응답 시간 측정 시작
             start_time = time.time()
             
+            # 세션 히스토리 업데이트
+            if session_id in session_history:
+                session_history[session_id]["last_accessed"] = datetime.now()
+                session_history[session_id]["total_queries"] += 1
+            
             # QA 체인 실행
             result = session["qa_chain"]({
                 "question": message,
@@ -841,6 +901,157 @@ class SessionManager:
         # 빈도수 상위 10개 추출
         word_counts = Counter(words)
         return [word for word, _ in word_counts.most_common(10)]
+    
+    def add_file_to_history(self, session_id: str, file_info: Dict) -> None:
+        """세션 히스토리에 파일 정보 추가"""
+        if session_id not in session_history:
+            session_history[session_id] = {
+                "session_id": session_id,
+                "created_at": datetime.now(),
+                "last_accessed": datetime.now(),
+                "files": [],
+                "total_queries": 0,
+                "memory_size_mb": 0.0
+            }
+        
+        # 파일 히스토리 생성
+        file_history = {
+            "filename": file_info["filename"],
+            "file_type": file_info["file_type"],
+            "upload_time": datetime.now(),
+            "file_size": file_info.get("file_size", 0),
+            "pages": file_info.get("pages"),
+            "rows": file_info.get("rows"),
+            "columns": file_info.get("columns"),
+            "chunks": file_info["chunks"],
+            "metadata": file_info.get("metadata")
+        }
+        
+        # 세션당 최대 파일 수 체크
+        if len(session_history[session_id]["files"]) >= MAX_FILES_PER_SESSION:
+            # 가장 오래된 파일 제거
+            session_history[session_id]["files"].pop(0)
+        
+        session_history[session_id]["files"].append(file_history)
+        session_history[session_id]["last_accessed"] = datetime.now()
+        
+        # 메모리 사용량 업데이트
+        self.update_memory_usage(session_id)
+    
+    def update_memory_usage(self, session_id: str) -> None:
+        """세션의 메모리 사용량 업데이트"""
+        if session_id in sessions:
+            # 간단한 추정: 청크 수 * 평균 청크 크기
+            estimated_size = 0
+            session = sessions[session_id]
+            if session.get("vector_store"):
+                # 벡터스토어 크기 추정 (청크당 약 2KB)
+                num_chunks = session.get("num_chunks", 0)
+                estimated_size = num_chunks * 2048  # bytes
+            
+            memory_usage["session_sizes"][session_id] = estimated_size
+            memory_usage["total_size_bytes"] = sum(memory_usage["session_sizes"].values())
+            
+            # MB로 변환하여 히스토리에 저장
+            if session_id in session_history:
+                session_history[session_id]["memory_size_mb"] = estimated_size / (1024 * 1024)
+    
+    def get_session_history(self, session_id: str = None) -> List[Dict]:
+        """세션 히스토리 조회"""
+        if session_id:
+            return [session_history[session_id]] if session_id in session_history else []
+        else:
+            return list(session_history.values())
+    
+    def cleanup_old_sessions(self, hours: int = SESSION_EXPIRE_HOURS) -> Dict:
+        """오래된 세션 정리"""
+        now = datetime.now()
+        cutoff_time = now - timedelta(hours=hours)
+        cleaned_sessions = []
+        
+        # 만료된 세션 찾기
+        expired_sessions = []
+        for sid, history in session_history.items():
+            if history["last_accessed"] < cutoff_time:
+                expired_sessions.append(sid)
+        
+        # 세션 제거
+        for sid in expired_sessions:
+            self.remove_session(sid)
+            if sid in session_history:
+                del session_history[sid]
+            if sid in memory_usage["session_sizes"]:
+                del memory_usage["session_sizes"][sid]
+            cleaned_sessions.append(sid)
+        
+        # 메모리 사용량 업데이트
+        memory_usage["total_size_bytes"] = sum(memory_usage["session_sizes"].values())
+        memory_usage["last_cleanup"] = now
+        
+        return {
+            "cleaned_sessions": len(cleaned_sessions),
+            "remaining_sessions": len(sessions),
+            "freed_memory_mb": sum(memory_usage["session_sizes"].get(sid, 0) for sid in cleaned_sessions) / (1024 * 1024)
+        }
+    
+    def cleanup_by_memory_limit(self) -> Dict:
+        """메모리 제한에 따른 세션 정리"""
+        current_memory_mb = memory_usage["total_size_bytes"] / (1024 * 1024)
+        
+        if current_memory_mb <= MAX_MEMORY_MB:
+            return {"status": "ok", "current_memory_mb": current_memory_mb}
+        
+        # 가장 오래 접근하지 않은 세션부터 정리
+        sorted_sessions = sorted(
+            session_history.items(),
+            key=lambda x: x[1]["last_accessed"]
+        )
+        
+        cleaned_sessions = []
+        for sid, history in sorted_sessions:
+            if current_memory_mb <= MAX_MEMORY_MB * 0.8:  # 80%까지만 사용
+                break
+            
+            session_size_mb = memory_usage["session_sizes"].get(sid, 0) / (1024 * 1024)
+            self.remove_session(sid)
+            if sid in session_history:
+                del session_history[sid]
+            if sid in memory_usage["session_sizes"]:
+                del memory_usage["session_sizes"][sid]
+            
+            cleaned_sessions.append(sid)
+            current_memory_mb -= session_size_mb
+        
+        memory_usage["total_size_bytes"] = sum(memory_usage["session_sizes"].values())
+        
+        return {
+            "cleaned_sessions": len(cleaned_sessions),
+            "current_memory_mb": current_memory_mb,
+            "status": "cleaned"
+        }
+    
+    def get_memory_stats(self) -> Dict:
+        """메모리 사용 통계 반환"""
+        return {
+            "total_memory_mb": memory_usage["total_size_bytes"] / (1024 * 1024),
+            "max_memory_mb": MAX_MEMORY_MB,
+            "usage_percent": (memory_usage["total_size_bytes"] / (1024 * 1024)) / MAX_MEMORY_MB * 100,
+            "active_sessions": len(sessions),
+            "total_sessions": len(session_history),
+            "last_cleanup": memory_usage["last_cleanup"].isoformat() if memory_usage["last_cleanup"] else None,
+            "session_details": [
+                {
+                    "session_id": sid,
+                    "memory_mb": size / (1024 * 1024),
+                    "last_accessed": session_history[sid]["last_accessed"].isoformat() if sid in session_history else None
+                }
+                for sid, size in sorted(
+                    memory_usage["session_sizes"].items(),
+                    key=lambda x: x[1],
+                    reverse=True
+                )[:10]  # Top 10 memory users
+            ]
+        }
 
 # Create session manager
 session_manager = SessionManager()
@@ -1154,6 +1365,102 @@ async def list_sessions():
             "messages_count": session["messages_count"]
         })
     return {"sessions": sessions_info}
+
+@app.get("/session-history")
+async def get_session_history(session_id: Optional[str] = None):
+    """세션 히스토리 조회"""
+    history = session_manager.get_session_history(session_id)
+    
+    # datetime을 문자열로 변환
+    formatted_history = []
+    for h in history:
+        formatted_session = {
+            "session_id": h["session_id"],
+            "created_at": h["created_at"].isoformat(),
+            "last_accessed": h["last_accessed"].isoformat(),
+            "files": [],
+            "total_queries": h["total_queries"],
+            "memory_size_mb": h["memory_size_mb"]
+        }
+        
+        for f in h["files"]:
+            formatted_file = {
+                "filename": f["filename"],
+                "file_type": f["file_type"],
+                "upload_time": f["upload_time"].isoformat(),
+                "file_size": f["file_size"],
+                "pages": f.get("pages"),
+                "rows": f.get("rows"),
+                "columns": f.get("columns"),
+                "chunks": f["chunks"],
+                "metadata": f.get("metadata")
+            }
+            formatted_session["files"].append(formatted_file)
+        
+        formatted_history.append(formatted_session)
+    
+    total_memory = sum(h["memory_size_mb"] for h in history)
+    
+    return {
+        "sessions": formatted_history,
+        "total_memory_mb": total_memory,
+        "active_sessions": len(session_manager.sessions)
+    }
+
+@app.post("/memory-management")
+async def manage_memory(request: MemoryManagementRequest):
+    """메모리 관리 작업 수행"""
+    action = request.action
+    
+    if action == "cleanup_old":
+        result = session_manager.cleanup_old_sessions(hours=request.hours_old)
+        return {
+            "status": "success",
+            "action": action,
+            "result": result
+        }
+    
+    elif action == "cleanup_session":
+        if not request.session_id:
+            raise HTTPException(status_code=400, detail="세션 ID가 필요합니다")
+        
+        if request.session_id in session_manager.sessions:
+            session_manager.remove_session(request.session_id)
+            if request.session_id in session_history:
+                del session_history[request.session_id]
+            if request.session_id in memory_usage["session_sizes"]:
+                del memory_usage["session_sizes"][request.session_id]
+            
+            return {
+                "status": "success",
+                "action": action,
+                "message": f"세션 {request.session_id}가 정리되었습니다"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다")
+    
+    elif action == "get_stats":
+        stats = session_manager.get_memory_stats()
+        return {
+            "status": "success",
+            "action": action,
+            "stats": stats
+        }
+    
+    else:
+        raise HTTPException(status_code=400, detail=f"알 수 없는 작업: {action}")
+
+@app.get("/memory-stats")
+async def get_memory_stats():
+    """메모리 사용 통계 조회"""
+    stats = session_manager.get_memory_stats()
+    
+    # 메모리 제한 체크
+    if stats["usage_percent"] > 80:
+        session_manager.cleanup_by_memory_limit()
+        stats = session_manager.get_memory_stats()  # 정리 후 다시 조회
+    
+    return stats
 
 @app.get("/analytics", response_model=AnalyticsResponse)
 async def get_analytics():
